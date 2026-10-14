@@ -305,6 +305,71 @@ def create_app(test_config=None):
             raise APIError("Recording not found.", 404)
         return send_file(recordings / session["_recording_file"], mimetype="audio/mp4", conditional=True)
 
+    @app.put("/api/sessions/<session_id>/evaluation")
+    def evaluation(session_id):
+        session = load(session_id)
+        value = body()
+        goal_ids = {x["id"] for x in session["preparation"]["goals"]}
+        rows, seen = [], set()
+        for row in items(value.get("goals", []), "Evaluation goals"):
+            if not isinstance(row, dict) or not isinstance(row.get("goal_id"), str) or row["goal_id"] not in goal_ids or row["goal_id"] in seen:
+                raise APIError("Each evaluation must reference a different original goal.")
+            seen.add(row["goal_id"])
+            assessment = row.get("assessment", "")
+            if assessment not in ("", "achieved", "partly_achieved", "not_achieved"):
+                raise APIError("Invalid achievement assessment.")
+            rows.append({"goal_id": row["goal_id"], "assessment": assessment,
+                         **{key: string(row.get(key, ""), key, False) for key in ("achievement", "explanation", "next_step")}})
+        state = value.get("state", "draft")
+        if state not in ("draft", "completed"):
+            raise APIError("Invalid evaluation state.")
+        if state == "completed" and (seen != goal_ids or any(not r["achievement"] or not r["assessment"] for r in rows)):
+            raise APIError("Complete an achievement account and assessment for every goal.")
+        old = session["evaluation"]
+        result = {"goals": rows, "reflection": string(value.get("reflection", ""), "Reflection", False), "state": state, "revision": old["revision"]}
+        if result != old:
+            result["revision"] += 1
+            session["evaluation"] = result
+            if session["summary"]:
+                session["summary"]["outdated"] = True
+            save(session)
+        return response(session)
+
+    @app.post("/api/sessions/<session_id>/summary")
+    def summary(session_id):
+        body()
+        session = load(session_id)
+        evaluation = session["evaluation"]
+        if not evaluation["reflection"] and not any(any(row.get(k) for k in ("achievement", "explanation", "next_step")) for row in evaluation["goals"]):
+            raise APIError("Save your written evaluation before requesting a summary.")
+        audio = None
+        if session["recording"]:
+            filename = session.get("_recording_file")
+            if not filename or Path(filename).name != filename:
+                raise APIError("The saved recording could not be found. Your evaluation is safe.", 409)
+            try:
+                with (recordings / filename).open("rb") as recording_file:
+                    audio = recording_file.read(gemini.MAX_AUDIO_BYTES + 1)
+            except OSError:
+                raise APIError("The saved recording could not be read. Please restore it before generating an audio summary.", 409)
+            if not audio:
+                raise APIError("The saved recording is empty. Your evaluation is safe.", 422)
+            if len(audio) > gemini.MAX_AUDIO_BYTES:
+                raise APIError("Audio summaries currently support recordings up to 12 MiB. Your full recording and evaluation are still saved.", 413)
+        text = model_call(gemini.summarize_evaluation, session, audio)
+        session["summary"] = {"ai_draft": text, "text": text, "source_revision": evaluation["revision"], "outdated": False, "includes_audio": audio is not None}
+        save(session)
+        return response(session)
+
+    @app.put("/api/sessions/<session_id>/summary")
+    def edit_summary(session_id):
+        session = load(session_id)
+        if not session["summary"]:
+            raise APIError("Generate a summary before editing it.", 409)
+        session["summary"]["text"] = string(body().get("text"), "Summary", False, 20000)
+        save(session)
+        return response(session)
+
     return app
 
 

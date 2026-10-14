@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.py[cod]
+data/
+.env
+.env.*
+!.env.example
+.certs/
+.DS_Store
+.local-archive/
+member-handoffs/
+/plan.md
