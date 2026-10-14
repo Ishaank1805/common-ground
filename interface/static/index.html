@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#31594c">
+  <title>Common Ground · Conversation preparation</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script type="module" src="/static/app.js"></script>
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="/" aria-label="Common Ground home"><span class="brand-mark" aria-hidden="true">cg</span><span>Common Ground</span></a><span class="profile" id="profile">Ananth <span>he/him</span></span></header>
+  <div class="workspace">
+    <aside class="sidebar" aria-label="Your conversations">
+      <button class="button primary" id="new-session">＋ New conversation</button>
+      <h2 class="eyebrow">Your conversations</h2>
+      <div id="session-list" class="session-list"><p class="muted small">Loading conversations…</p></div>
+      <p class="sidebar-note">A little preparation.<br>More room to be heard.</p>
+    </aside>
+    <main>
+      <div class="page-heading"><div><p class="eyebrow">Space for your point of view</p><h1 id="page-title">Start with what matters.</h1><p id="page-description">Prepare for a conversation, capture it, and reflect in your own words.</p></div><button id="delete-session" class="text-button danger" hidden>Delete conversation</button></div>
+      <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+      <p id="stage-progress" class="stage-progress" role="status">Step 1 of 3 · Prepare</p>
+      <nav id="stage-tabs" class="stage-tabs" aria-label="Completed conversation" hidden>
+        <button type="button" data-stage="prepare" aria-controls="prepare-stage">Preparation</button>
+        <button type="button" data-stage="record" aria-controls="record-stage">Recording</button>
+        <button type="button" data-stage="reflect" aria-controls="reflect-stage">Self-evaluation</button>
+      </nav>
+      <section id="prepare-stage" class="stage-panel" aria-label="Prepare">
+        <form id="preparation-form" class="panel">
+          <div class="section-heading"><div><p class="eyebrow">Before the conversation</p><h2>What would you like to say?</h2></div><span class="pill">Your starting point</span></div>
+          <fieldset id="preparation-fields">
+            <label for="audience">Who are you speaking to?</label><input id="audience" name="audience" placeholder="Mother, father" required maxlength="2000" aria-describedby="audience-help"><p class="help" id="audience-help">Separate people or relationships with commas.</p>
+            <label for="topic">What is the conversation about?</label><input id="topic" name="topic" placeholder="One general topic" required maxlength="2000">
+            <div class="field-group"><div class="label-row"><label id="goals-label">What do you want to achieve?</label><button type="button" class="add-button" data-add="goals" aria-label="Add a goal">＋ Add goal</button></div><div id="goals" aria-labelledby="goals-label"></div></div>
+            <div class="expectations"><h3>Your expectations</h3><p class="help">Your sense of how the conversation might go. It’s okay to leave these blank.</p><div class="field-group"><div class="label-row"><label id="positives-label">What do you think will go well?</label><button type="button" class="add-button" data-add="positives" aria-label="Add something that might go well">＋ Add</button></div><div id="positives" aria-labelledby="positives-label"></div></div><div class="field-group"><div class="label-row"><label id="barriers-label">What do you think could be a barrier?</label><button type="button" class="add-button" data-add="barriers" aria-label="Add a possible barrier">＋ Add</button></div><div id="barriers" aria-labelledby="barriers-label"></div></div></div>
+          </fieldset>
+          <div id="preparation-locked" class="help" hidden>This preparation is preserved with your recording or reflection. Start a new conversation to change your goals.</div>
+          <div id="clarifications" hidden></div>
+          <div class="actions"><button type="submit" class="button primary" id="plan-button">Plan <span aria-hidden="true">↗</span></button><button type="button" class="button secondary" id="save-preparation">Save preparation</button><span class="help" id="model-status"></span></div>
+        </form>
+        <section class="panel plan-panel" id="plan-panel" hidden><div class="section-heading"><div><p class="eyebrow">A possible way forward</p><h2>Your conversation plan</h2></div><span class="pill">AI draft · editable</span></div><div class="plan-toolbar"><p class="help">A suggested sequence. Use the words that feel right to you.</p><button type="button" class="button secondary" id="edit-plan" aria-controls="plan-editor" aria-expanded="false">Edit wording</button></div><form id="chosen-plan-form"><div id="plan-preview"></div><div id="plan-editor" hidden></div><div class="actions"><button class="button primary" type="submit" id="save-plan">Save this plan</button><button class="button secondary" type="button" id="reject-plan">Discard suggestions</button><span class="help" id="plan-save-status"></span></div></form></section>
+        <div class="stage-navigation"><button type="button" class="button primary" id="go-record">Next: Record →</button></div>
+      </section>
+      <section id="record-stage" class="stage-panel" aria-label="Record" hidden><div class="panel recording-panel"><p class="eyebrow">During the conversation</p><h2>Be present. We’ll keep the recording.</h2><p class="muted">Audio is saved with this conversation. There are no live alerts or analysis.</p><div class="recording-display"><div id="recording-orb" class="recording-orb" aria-hidden="true"><span></span></div><div class="timer" id="recording-timer">00:00</div><p id="recording-status" role="status" aria-live="polite">Ready when you are.</p></div><p class="help" id="recording-help">Keep this page open while recording. Let everyone know before you start.</p><div class="actions centered"><button class="button primary" id="start-recording">Start recording</button><button class="button stop" id="stop-recording" hidden>Stop and save</button><button class="button primary" id="retry-recording" hidden>Retry save</button><a class="button secondary" id="download-recording" hidden>Download a backup</a><button class="text-button danger" id="discard-recording" hidden>Discard captured audio</button></div><audio id="recording-playback" controls preload="metadata" hidden></audio><p id="recording-saved" class="help" hidden>Saved as MP4. You can return to this recording later.</p></div><div class="stage-navigation"><button type="button" class="button secondary" id="back-prepare">← Back to preparation</button><button type="button" class="button primary" id="go-reflect">Next: Self-evaluation →</button></div></section>
+      <section id="reflect-stage" class="stage-panel" aria-label="Reflect" hidden><form class="panel" id="evaluation-form"><div class="section-heading"><div><p class="eyebrow">After the conversation</p><h2>How did it go for you?</h2></div><span class="pill">In your own words</span></div><p class="help">Your assessment is what counts. You can save a draft and return later.</p><div id="evaluation-goals"></div><label for="reflection">What went differently from what you expected? <span class="optional">Optional</span></label><div id="expectations-context" class="expectations-context"></div><textarea id="reflection" aria-describedby="expectations-context" rows="4" placeholder="Anything that surprised you, or that you would approach differently…"></textarea><div class="actions"><button class="button secondary" type="submit" name="state" value="draft">Save draft</button><button class="button primary" type="submit" name="state" value="completed">Complete reflection</button><span class="help" id="evaluation-status"></span></div></form><section class="panel summary-panel"><div class="section-heading"><div><p class="eyebrow">Optional</p><h2>Your conversation summary</h2></div><span class="pill">AI-assisted</span></div><p class="help" id="summary-sources">Uses your written evaluation and the saved audio, when available. These are sent to Google Gemini only when you generate a summary. Your ratings stay yours.</p><button class="button secondary" id="generate-summary">Generate summary</button><div id="summary-editor" hidden><p id="summary-outdated" class="notice" hidden>Your reflection or recording has changed. Generate a new summary to include the latest information.</p><p class="help" id="summary-used-sources"></p><label for="summary-text">AI summary · editable draft</label><textarea id="summary-text" rows="6"></textarea><button class="button secondary" id="save-summary">Save summary edits</button></div></section><div class="stage-navigation"><button type="button" class="button secondary" id="back-record">← Back to recording</button></div></section>
+      <footer>Common Ground <span aria-hidden="true">·</span> Prepare with intention. Reflect on your terms.</footer>
+    </main>
+  </div>
+</body>
+</html>
