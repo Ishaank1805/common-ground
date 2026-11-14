@@ -1,10 +1,13 @@
 // Run with: node tests/frontend.mjs
 import assert from 'node:assert/strict';
-import {preparationFromFields, samePreparation, evaluationComplete, formatDuration} from '../static/data.mjs';
+import {preparationFromFields, peopleBoxes, splitPeople, samePreparation, evaluationComplete, formatDuration} from '../static/data.mjs';
 import {ConversationRecorder} from '../static/recorder.mjs';
 
 const prep = preparationFromFields(' mother, , father ', ' A course ', [{id: 'g2', description: ' Explain why '}, {id: 'g4', description: ' '}], [' ', ' They will listen '], []);
 assert.deepEqual(prep, {audience: ['mother', 'father'], topic: 'A course', goals: [{id: 'g2', description: 'Explain why'}], expectations: {what_might_go_well: ['They will listen'], possible_barriers: []}});
+assert.deepEqual(splitPeople('mother father'), ['mother', 'father']);
+assert.deepEqual(peopleBoxes('mother '), ['mother', '']);
+assert.deepEqual(peopleBoxes('mother father'), ['mother', 'father']);
 // Flask sorts object keys; saving unchanged preparation must preserve plan edits.
 const reordered = {expectations: {possible_barriers: prep.expectations.possible_barriers, what_might_go_well: prep.expectations.what_might_go_well}, goals: prep.goals.map(goal => ({description: goal.description, id: goal.id})), topic: prep.topic, audience: prep.audience};
 assert.equal(samePreparation(prep, reordered), true);

@@ -1,16 +1,16 @@
 # Implementation plan
 
-Help a person prepare for a family conversation, record it, and evaluate the outcome against their original goals. No live analysis, alerts, or intervention suggestions. An LLM summary of their self-evaluation is optional.
+Help a person prepare for a family conversation, record it, and evaluate the outcome against their original goals. No alerts or automatic interventions; optional quiet prompts during the recording appear only if the participant chooses them (see **Quiet prompts during the conversation**). An LLM summary of their self-evaluation is optional.
 
 Development machine: **MacBook Pro, Apple M2, 16 GB memory**. The app must support recording directly on a phone. English, short conversations; model calls use the Google Gemini API.
 
 ## User profile
 
-Identity comes from login, not the preparation form. For this prototype, use **Ananth**, with **he/him** pronouns. Mock the profile; login implementation is out of scope. A separate gender value may come from login; leave it null until provided rather than deriving it from pronouns.
+Identity comes from the person's own account, not the preparation form: each person signs up with a username, password, name, pronouns and optional gender, and sees only her own conversations (see README, Accounts and privacy). The examples below use **Ananth** (he/him).
 
 ## Workflow
 
-**Fill preparation fields → Plan → clarification or session plan → review/edit/save → record in app on phone → save MP4 → self-evaluate → optional evaluation summary**
+**Fill preparation fields → Plan → clarification or session plan → review/edit/save → record in app on phone (optional quiet prompts) → save MP4 → self-evaluate → optional evaluation summary**
 
 Navigate through Prepare → Record → Self-evaluate using **Next** and **Back** buttons, with a non-clickable stage indicator. After the reflection is completed, use tabs to revisit all three stages, including when reopening the conversation. Preserve entered data when moving between stages; stop or resolve pending recording saves before leaving Record.
 
@@ -49,7 +49,7 @@ Example input; the conversation content is illustrative:
 ```
 
 - `session_id` and goal IDs are assigned by the application and preserved across requests.
-- `user` is supplied by the login/mock profile. `gender` is a string or null.
+- `user` is the signed-in person's profile. `gender` is a string or null.
 - Split the audience input on commas, trim whitespace, and discard empty entries to produce the non-empty `audience` array. `topic` is one non-empty string.
 - `goals` is a non-empty array with unique IDs and non-empty descriptions.
 - `expectations` is an object containing `what_might_go_well` and `possible_barriers`, each an array of non-empty strings. Trim entries and discard unused blank rows. Either array may be empty. Expectations have no goal IDs.
@@ -152,7 +152,44 @@ Test prompts with manually provided clear and vague inputs, “not sure” answe
 
 ## Recording
 
-The app records audio directly on the phone and saves it as an MP4 against the saved plan. Provide microphone permission handling, **Start recording**, **Stop and save**, elapsed time, and recording/saving/error status. Confirm success only after the file is persisted; retain captured audio for a save retry if saving fails. No separate recorder or manual file upload. Verify the saved MP4 contains playable audio. Audio is included only when the user requests a post-session summary. Standalone transcription remains deferred.
+The app records audio directly on the phone and saves it as an MP4 against the saved plan. Provide microphone permission handling, **Start recording**, **Stop and save**, elapsed time, and recording/saving/error status. Confirm success only after the file is persisted; retain captured audio for a save retry if saving fails. No separate recorder or manual file upload. Verify the saved MP4 contains playable audio. Saved audio is sent only when the user requests a post-session summary; with quiet prompts on, live audio is sent each time a prompt is prepared: the conversation so far when the person asks, otherwise the latest minute. A saved recording can be discarded to record again: its audio and prompts are deleted, an audio-based summary is marked outdated, and the written reflection is kept. Standalone transcription remains deferred.
+
+## Quiet prompts during the conversation
+
+Organizer feedback asked for no notifications or alerts during the session; later feedback noted that participants may need guidance, especially in early sessions. Quiet prompts reconcile the two: optional, chosen by the participant, and passive.
+
+- **Choice:** on the Record step, before or during recording: **No prompts** (default for every conversation), **When I ask**, or **As we go**. The participant can change or turn off prompts at any time. Prompts need a saved plan and a configured Gemini key.
+- **Fading support:** *As we go* is marked as suggested for the participant's first three recorded conversations, and *When I ask* afterwards. The app never turns prompts on by itself.
+- **Passive display:** prompts change quietly on screen, with no sound, vibration, notification, pop-up, motion or screen-reader announcement. The model is told that most of the time the right prompt is none.
+- **Content:** at most one short cue drawn from the saved plan, of kind `next_point`, `respond_to_concern`, `return_to_goal`, `pause`, `close` or `step_away`, with optional example wording; plus the plan step the conversation is closest to and the goals raised so far (a raised goal stays raised). Cues never add goals or pressure, judge or quote family members, or grade the participant. They never argue the other side's position or have the participant claim anything not in her preparation, plan or own words (unknowns become a question or an offer), and a goal counts as raised only when the model can cite evidence: a short paraphrase of what was said that covers it (stored with the prompt, never shown mid-conversation); goals without evidence are dropped. Cue wording uses the prompt language the participant chooses on the Record step (English, Hindi in Devanagari, or Hinglish in Latin script), even when her plan is in English; the choice is remembered on her device. Notes stay in English. The fixed safety wording is in English until the NGO supplies reviewed translations. If the conversation sounds threatening or unsafe, the model returns `step_away` (even unasked in *As we go*) and the app shows fixed wording, never model wording. Because family members may see the screen, the visible cue is neutral ("Take a break": it is okay to continue another time, with someone they trust) and looks like any other cue; the helplines (go somewhere safe and call 112, India's national emergency number, or the Women Helpline on 181) sit behind a "More help" tap and are shown in full in the prompt list after the conversation. These numbers are India-specific and must be localised if the app is used elsewhere.
+- **Audio:** the browser keeps only the latest 60 seconds of microphone audio in memory (16 kHz mono PCM) beside the normal recording, and sends it as WAV when a prompt is prepared: about every 45 seconds in *As we go* (silent windows are skipped) or on each tap in *When I ask*. **When the person asks** (a tap in either mode), the browser also sends the whole conversation so far: the recorder's compressed audio, already in memory. The server converts it to 16 kHz mono AAC, keeping at most the last 45 minutes to stay within Gemini's inline request limit, and the model hears it before the latest minute, so the cue draws on everything said. Background checks in *As we go* send only the latest minute and rely on the chain of notes, because re-sending the whole conversation every 45 seconds would grow slower and costlier with each check. A tap late in a long conversation takes longer to answer; helpfulness is preferred over speed. The saved recording is unchanged.
+- **No waiting:** when the person taps *Get a prompt*, her next planned point appears at once, labelled "From your plan" (from the step the conversation is at, skipping goals already raised). The AI cue replaces it when ready; if the AI request fails, the planned point stays.
+- **Continuity and storage:** each prompt is stored with the model's brief running notes (topics only, never names or who said what) in a `facilitator_events` table keyed by session and recording start time, separate from the versioned session row, so a prompt can never conflict with saving the recording. The next request receives those notes, so the model can follow the whole conversation from one-minute windows. After saving, the Record step lists the prompts prepared during that recording. Deleting the conversation deletes its prompts.
+- **Failure handling:** prompt errors never affect the recording. After three consecutive failures, prompts stop for that recording with a quiet message.
+- **Voice matching (experimental, opt-in):** each participant chooses to try it in Account (off by default); a server can stop offering it with `VOICE_MATCHING=0`. With her consent she records a short voice sample in Account; only a voice fingerprint is kept (never the audio), deletable at any time. Speech is grouped into voices and a voice is labelled hers only if it matches her sample clearly better than every other voice in the conversation; similar voices come out unclear rather than wrong. Gemini treats unclear as unknown, and a threat always gets the safety cue whoever the timeline says spoke. See README, Voice matching.
+- **Follow-up (NGO feedback 9):** a planned conversation can be marked "not yet" with what got in the way, an optional date and note; fixed advice per reason (helplines for "didn't feel safe"); a quiet check-in when she returns; a status for each conversation.
+- **Anonymous insights (NGO feedback 10):** opt-in per participant; admins and the NGO staff they choose in Account (Team access) see counts only, nothing below five sharing participants, and counts under three shown as "fewer than 3".
+- **Existing solutions (NGO feedback 7):** see docs/existing-solutions.md.
+- **How prompts decide:** the AI answers threat first, then classifies the latest moment as one situation (heated, unanswered concern, off topic, wrapping up, stuck, on track) and writes the cue for it; the server maps the situation to the cue kind, shows the fixed safety message for any threat, always answers a tap, and keeps background checks quiet when on track and free of repeats within two minutes.
+- **Instant prompts (experimental):** chosen per conversation; the phone streams 16 kHz audio over a WebSocket to the server, which relays it to Gemini 3.8 Live. Judgements arrive as assess_moment function calls with the regular contract and pass the same validation and cue policy; threats are reported at once; text cues only, spoken audio discarded; sessions compress and resume.
+- **Screen stays on:** while recording, the app asks the browser to keep the screen awake (Screen Wake Lock), so prompts stay visible and phones do not pause the recording. The lock is released when recording stops and taken again if the person leaves the page and returns. Where unsupported, nothing changes.
+
+Live prompt response contract. `prompt` is null when no cue is needed; the model uses the literal `"no step"` for an unclear step, which is stored as null.
+
+```json
+{
+  "audio_status": "clear",
+  "notes": "Further study and the wish for a job after college came up.",
+  "current_step_id": "step2",
+  "raised_goals": [{"goal_id": "g1", "evidence": "Why further study matters was explained."}],
+  "prompt": {
+    "kind": "respond_to_concern",
+    "text": "Acknowledge the worry about starting work, then share your plan.",
+    "example_wording": "I understand you'd like me to start working. Can I share how I've thought about it?",
+    "step_id": "step2"
+  }
+}
+```
 
 ## Self-evaluation
 
@@ -189,16 +226,17 @@ Each member reviews and tests their component before committing their assigned f
 | Recording | Session ID, MP4 file reference, recording start/end times, save status |
 | Evaluation | Session ID, goal ID, achievement account, self-assessment, optional explanation/next step, session-level overall reflection, draft/completed state |
 | Optional summary | Session ID, source evaluation revision, audio-included flag, AI draft, user-edited version |
+| Quiet prompts | Session ID, recording start time, mode, requested flag, elapsed time, audio status, current step, raised goals, prompt, model notes |
 
 Keep records isolated by session. Deletion removes all associated records and recording files.
 
 ## Implementation baseline
 
-- **App:** responsive HTML/CSS/JavaScript served by Flask, with native browser microphone capture and a mock login profile for Ananth. Phone access requires trusted HTTPS.
+- **App:** responsive HTML/CSS/JavaScript served by Flask, with native browser microphone capture and real accounts (see README, Accounts and privacy). Phone access requires trusted HTTPS.
 - **Storage:** SQLite for structured records; local files on the backend for recordings. FFmpeg normalizes browser-recorded audio to AAC in MP4; FFprobe checks saved audio. Native MP4 capture is preferred when supported.
-- **Model:** Google Gemini API, `gemini-3.5-flash-lite`. Keep the API key on the backend, outside source control and the phone client. Send preparation and clarification data for planning, and saved audio plus written evaluation for optional post-session summaries. The interface explains what is sent before generation.
-- **Model use:** preparation clarification/planning and optional evaluation summary only. Schema-constrained responses, validated before display/storage.
-- **Failure handling:** retain entered data when generation fails. Recording and self-evaluation do not depend on model availability.
+- **Model:** Google Gemini API, `gemini-3.5-flash-lite`. Keep the API key on the backend, outside source control and the phone client. Send preparation and clarification data for planning, the saved plan plus live audio for optional quiet prompts (the conversation so far when asked, otherwise the latest minute), and saved audio plus written evaluation for optional post-session summaries. The interface explains what is sent before generation.
+- **Model use:** preparation clarification/planning, optional quiet prompts during a recording, and optional evaluation summary only. Schema-constrained responses, validated before display/storage.
+- **Failure handling:** retain entered data when generation fails. Recording and self-evaluation do not depend on model availability. Prompt failures never affect the recording.
 
 ## Parallel implementation and testing
 
@@ -207,7 +245,7 @@ Keep records isolated by session. Deletion removes all associated records and re
 3. Connect preparation, recording, self-evaluation, and optional summary.
 4. Test both model response states, clarification resubmission, invalid references, user edits, saving/reopening, comma-separated audience parsing, adding goals/expectations, phone microphone permission denial, interrupted recording, MP4 playback after saving/reopening, save retry, model failure, and deletion. Check that **Not sure** produces a plan with labelled assumptions and that the overall reflection persists.
 
-Check that plans reflect the user's goals, recordings receive no live analysis, and self-evaluations remain user-authored. No generated dataset or fixed dataset split is required.
+Check that plans reflect the user's goals, recordings receive no live analysis unless the participant turns on quiet prompts, and self-evaluations remain user-authored. No generated dataset or fixed dataset split is required.
 
 ## Deferred decisions
 

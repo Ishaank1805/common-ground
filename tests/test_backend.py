@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import patch
 
 from app import create_app
+from tests.support import signed_in
 
 PREPARATION = {"audience": ["mother", "father"], "topic": "Taking a course",
                "goals": [{"id": "g1", "description": "Explain why it matters"}],
@@ -23,7 +24,7 @@ class BackendTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.app = create_app({"TESTING": True, "DATA_DIR": self.temp.name})
-        self.client = self.app.test_client()
+        self.client = signed_in(self.app.test_client())
         created = self.client.post("/api/sessions", json={"preparation": PREPARATION})
         self.assertEqual(created.status_code, 201)
         self.session = created.get_json()
@@ -69,7 +70,7 @@ class BackendTests(unittest.TestCase):
         changed["topic"] = "New topic during inference"
         def generate(*_args):
             def change():
-                with self.app.test_client() as concurrent:
+                with signed_in(self.app.test_client()) as concurrent:
                     return concurrent.put(self.url + "/preparation", json={"preparation": changed}).status_code
             with ThreadPoolExecutor(max_workers=1) as pool:
                 self.assertEqual(pool.submit(change).result(), 200)
@@ -98,7 +99,7 @@ class BackendTests(unittest.TestCase):
         changed = copy.deepcopy(PREPARATION)
         changed["topic"] = "Trying to overwrite original intent"
         self.assertEqual(self.client.put(self.url + "/preparation", json={"preparation": changed}).status_code, 409)
-        reopened = create_app({"TESTING": True, "DATA_DIR": self.temp.name}).test_client().get(self.url).get_json()
+        reopened = signed_in(create_app({"TESTING": True, "DATA_DIR": self.temp.name}).test_client()).get(self.url).get_json()
         self.assertEqual(reopened["evaluation"]["reflection"], revised["reflection"])
         self.assertEqual(self.client.delete(self.url).status_code, 204)
         self.assertEqual(self.client.get(self.url).status_code, 404)

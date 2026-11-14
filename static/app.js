@@ -1,5 +1,10 @@
-import {preparationFromFields, samePreparation, evaluationComplete, formatDuration} from './data.mjs';
+import {LiveStream} from './livestream.mjs';
+import {showInsights} from './insights.mjs';
+import {preparationFromFields, peopleBoxes, samePreparation, evaluationComplete, formatDuration} from './data.mjs';
 import {ConversationRecorder} from './recorder.mjs';
+import {LiveFacilitator, nextPlannedPoint} from './facilitator.mjs';
+import {ScreenAwake} from './wake.mjs';
+import {Account} from './account.mjs';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -11,6 +16,22 @@ let nextGoal = 1;
 let recordingUrl = null;
 let lastBlob = null;
 let config = null;
+let account = null;
+// Quiet prompts are chosen per conversation and always start off.
+let promptMode = 'off';
+let instantPrompts = false; // Gemini Live, chosen for each conversation.
+let liveStream = null;
+let instantCue = null; // Her next planned point, shown at once on a tap until the AI cue arrives.
+let liveCue = null; // Last concrete cue. A null or filler result must not replace it with status chatter.
+const PROMPT_LANGUAGES = {en: 'en', hi: 'hi', hinglish: 'hi-Latn'}; // choice → lang attribute for the cue
+// The prompt language is a standing preference remembered on this device; consent (the mode) is not.
+let promptLanguage = (() => { try { const saved = localStorage.getItem('cg-prompt-language'); return PROMPT_LANGUAGES[saved] ? saved : 'en'; } catch { return 'en'; } })();
+let promptHistory = [];
+let promptHistoryFor = null;
+let renderedHistory = null;
+let sessionSummaries = [];
+const EARLY_CONVERSATIONS = 3;
+const PROMPT_LABELS = {next_point: 'You could bring up', respond_to_concern: 'If you want to respond', return_to_goal: 'To come back to your point', pause: 'If you need a moment', close: 'When you’re ready to close', step_away: 'Take a break'};
 
 function node(tag, className, text) {
   const element = document.createElement(tag);
@@ -24,10 +45,16 @@ function notice(message, error = false) {
   element.className = `notice${error ? ' error' : ''}`;
   element.hidden = !message;
 }
+// A 401 means her sign-in ended (idle or expired): ask her to sign in again without losing this page.
+async function authedFetch(url, options) {
+  const response = await fetch(url, options);
+  if (response.status === 401) account?.expired();
+  return response;
+}
 async function api(path, method = 'GET', data) {
   const options = {method};
   if (data !== undefined) { options.headers = {'Content-Type': 'application/json'}; options.body = JSON.stringify(data); }
-  const response = await fetch(`/api${path}`, options);
+  const response = await authedFetch(`/api${path}`, options);
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error || `Could not complete this action (${response.status}).`);
   return result;
@@ -61,6 +88,7 @@ function updateLocks() {
   $('#stop-recording').disabled = recorder.state !== 'recording';
   $('#retry-recording').disabled = recorder.state === 'saving';
   renderStageNavigation();
+  renderFacilitator();
 }
 function renderStageNavigation() {
   const completed = session?.evaluation.state === 'completed';
@@ -88,6 +116,47 @@ function markDirty(kind) {
 function canLeave() {
   if (recorder.pending) { notice('Finish saving your recording before changing conversations.', true); return false; }
   return !dirty.size || window.confirm('You have unsaved changes. Leave this conversation without saving them?');
+}
+function appendPerson(value = '', {after = null} = {}) {
+  if ($('#audience').children.length >= 30) { notice('You can add up to 30 people.', true); return null; }
+  const row = node('div', 'entry-row person-row');
+  const input = node('input');
+  input.type = 'text';
+  input.value = value;
+  input.maxLength = 200;
+  input.placeholder = 'One person';
+  input.autocomplete = 'off';
+  input.setAttribute('aria-label', 'Person you’re speaking to');
+  const remove = node('button', 'remove-button', '×');
+  remove.type = 'button';
+  remove.setAttribute('aria-label', 'Remove person');
+  remove.addEventListener('click', () => {
+    row.remove();
+    if (!$('#audience').children.length) appendPerson();
+    preparationChanged();
+  });
+  row.append(input, remove);
+  if (after?.parentElement === $('#audience')) after.after(row);
+  else $('#audience').append(row);
+  return input;
+}
+function separatePerson(input, commit = false) {
+  const boxes = peopleBoxes(input.value, commit);
+  if (boxes.length === 1 && boxes[0] === input.value) return;
+  const row = input.closest('.entry-row');
+  const room = 30 - $('#audience').children.length;
+  input.value = boxes[0];
+  let previous = row;
+  boxes.slice(1, 1 + Math.max(room, 0)).forEach(name => {
+    const created = appendPerson(name, {after: previous});
+    if (created) previous = created.closest('.entry-row');
+  });
+  if (boxes.length > room + 1) notice('You can add up to 30 people.', true);
+  if (boxes.length > 1) {
+    const focus = previous.querySelector('input');
+    focus.focus();
+    focus.setSelectionRange?.(focus.value.length, focus.value.length);
+  }
 }
 function appendEntry(listId, value = '', goalId) {
   if ($(`#${listId}`).children.length >= 30) { notice('You can add up to 30 entries in each list.', true); return null; }
@@ -118,13 +187,14 @@ function preparationChanged() {
   $('#plan-panel').hidden = true;
 }
 function getPreparation() {
-  return preparationFromFields($('#audience').value, $('#topic').value,
+  return preparationFromFields($$('#audience input').map(input => input.value), $('#topic').value,
     $$('#goals .entry-row').map(row => ({id: row.dataset.goalId, description: row.querySelector('textarea').value})),
     $$('#positives textarea').map(input => input.value), $$('#barriers textarea').map(input => input.value));
 }
 function fillPreparation() {
   const preparation = session?.preparation;
-  $('#audience').value = preparation?.audience.join(', ') || '';
+  $('#audience').replaceChildren();
+  (preparation?.audience?.length ? preparation.audience : ['']).forEach(name => appendPerson(name));
   $('#topic').value = preparation?.topic || '';
   ['goals', 'positives', 'barriers'].forEach(id => $(`#${id}`).replaceChildren());
   nextGoal = Math.max(0, ...(preparation?.goals || []).map(goal => Number(goal.id.replace(/^g/, '')) || 0)) + 1;
@@ -136,22 +206,114 @@ function fillPreparation() {
 }
 async function refreshHistory() {
   const sessions = await api('/sessions');
+  sessionSummaries = sessions;
   $('#session-list').replaceChildren();
   if (!sessions.length) $('#session-list').append(node('p', 'muted small', 'Your saved conversations will appear here.'));
   sessions.forEach(item => {
     const button = node('button', `session-item${session?.id === item.id ? ' active' : ''}`);
     button.dataset.sessionId = item.id;
     button.append(node('strong', '', item.topic || 'Untitled conversation'));
-    button.append(node('small', '', new Date(item.updated_at).toLocaleDateString(undefined, {day: 'numeric', month: 'short'})));
+    const day = new Date(item.updated_at).toLocaleDateString(undefined, {day: 'numeric', month: 'short'});
+    button.append(node('small', '', [day, statusLabel(item)].filter(Boolean).join(' · ')));
     button.addEventListener('click', () => {
       if (session?.id === item.id || !canLeave()) return;
-      task(async () => { const loaded = await api(`/sessions/${item.id}`); recorder.reset(); session = loaded; dirty.clear(); renderSession(); setStage('prepare'); });
+      openSession(item.id);
     });
     $('#session-list').append(button);
   });
   updateLocks();
 }
+const STATUS_LABELS = {planned: 'Planned', not_yet: 'Not yet', happened: 'Happened', recorded: 'Recorded', reflected: 'Reflected'};
+function formatDay(isoDate) {
+  return new Date(`${isoDate}T12:00:00`).toLocaleDateString(undefined, {weekday: 'short', day: 'numeric', month: 'short'});
+}
+function statusLabel(item) {
+  const label = STATUS_LABELS[item.status] || '';
+  return item.status === 'not_yet' && item.next_try ? `${label} · try ${formatDay(item.next_try)}` : label;
+}
+function openSession(id, stageName = 'prepare', then) {
+  task(async () => {
+    const loaded = await api(`/sessions/${id}`);
+    recorder.reset(); facilitator.reset(); session = loaded; dirty.clear(); renderSession(); setStage(stageName);
+    then?.();
+  });
+}
+
+// Fixed, reviewable advice for each reason a conversation hasn't happened yet. No AI is involved.
+const FOLLOW_UP_ADVICE = {
+  no_right_moment: 'Choose a time when everyone is calm and not rushed, such as after a meal.',
+  felt_nervous: 'Feeling nervous is normal. Try saying your opening line out loud a few times. You can also turn on quiet prompts with “When I ask”, so help is there if you need it.',
+  family_busy: 'It can help to ask for the time in advance, for example: “Could we sit together one evening this week? There’s something I’d like to talk about.”',
+  felt_unsafe: 'Your safety comes first. You don’t have to have this conversation. If you try again, consider having someone you trust with you, or talking to the Umeed for Women team first. If you feel unsafe, go somewhere safe and call 112, or the Women Helpline on 181.',
+  changed_mind: 'That’s okay. Your preparation is saved, and you can change your goals or come back to it whenever you like.',
+  other: 'Your preparation is saved. When you feel ready, look over your plan and try again.',
+};
+function renderFollowUp() {
+  const panel = $('#follow-up-panel');
+  const show = Boolean(session?.chosen_plan) && !session?.recording && !recorder.pending && recorder.state !== 'saved';
+  panel.hidden = !show;
+  $('#follow-up-date').min = new Date().toISOString().slice(0, 10);
+  const follow = session?.follow_up;
+  const advice = $('#follow-up-advice');
+  if (!show || follow?.status !== 'not_yet') {
+    advice.hidden = true;
+    $('#follow-up-form').reset();
+    if (!show) panel.open = false;
+    return;
+  }
+  const opening = session.chosen_plan.steps?.[0]?.example_wording;
+  const lines = [FOLLOW_UP_ADVICE[follow.reason] || FOLLOW_UP_ADVICE.other];
+  if (opening && ['no_right_moment', 'felt_nervous'].includes(follow.reason)) lines.push(`Your opening line: “${opening}”`);
+  if (follow.next_try) lines.push(`We’ll check in with you on ${formatDay(follow.next_try)}.`);
+  advice.replaceChildren(...lines.map(text => node('p', '', text)));
+  advice.hidden = false;
+  const reason = $('#follow-up-form').querySelector(`input[name="reason"][value="${follow.reason}"]`);
+  if (reason) reason.checked = true;
+  $('#follow-up-date').value = follow.next_try || '';
+  $('#follow-up-note').value = follow.note || '';
+}
+function openFollowUp() {
+  const panel = $('#follow-up-panel');
+  if (panel.hidden) return;
+  panel.open = true;
+  panel.scrollIntoView({block: 'start'});
+}
+// A gentle check-in when she comes back: did a planned conversation happen? Once per visit, never a pop-up.
+function showCheckIn() {
+  const today = new Date().toISOString().slice(0, 10);
+  const stale = Date.now() - 3 * 24 * 3600 * 1000;
+  const due = sessionSummaries.find(item => (item.status === 'not_yet' && item.next_try && item.next_try <= today)
+    || (item.status === 'planned' && new Date(item.updated_at).getTime() < stale));
+  const box = $('#check-in');
+  box.hidden = !due;
+  if (!due) return;
+  const buttons = [['button secondary', 'Yes, it happened'], ['button secondary', 'Not yet'], ['text-button', 'Not now']]
+    .map(([kind, label]) => { const button = node('button', kind, label); button.type = 'button'; return button; });
+  const actions = node('div', 'actions', '');
+  actions.append(...buttons);
+  box.replaceChildren(node('p', '', `Did your conversation about “${due.topic}” happen?`), actions);
+  const [yes, notYet, later] = buttons;
+  later.addEventListener('click', () => { box.hidden = true; });
+  yes.addEventListener('click', () => {
+    if (!canLeave()) return;
+    box.hidden = true;
+    task(async () => {
+      session = await api(`/sessions/${due.id}/follow-up`, 'PUT', {status: 'happened'});
+      recorder.reset(); facilitator.reset(); dirty.clear(); renderSession(); setStage('reflect');
+      notice('Glad it happened. Take a moment to reflect on how it went.');
+      await refreshHistory();
+    });
+  });
+  notYet.addEventListener('click', () => {
+    if (!canLeave()) return;
+    box.hidden = true;
+    openSession(due.id, 'record', openFollowUp);
+  });
+}
+
 function renderSession() {
+  promptMode = 'off'; // Consent to prompts is given for each conversation, never carried over.
+  instantPrompts = false;
   $('#delete-session').hidden = !session;
   $('#page-title').textContent = session ? session.preparation.topic : 'Start with what matters.';
   $('#page-description').textContent = session ? `A conversation with ${session.preparation.audience.join(', ')}.` : 'Prepare for a conversation, capture it, and reflect in your own words.';
@@ -380,7 +542,7 @@ const recorder = new ConversationRecorder({
   onChange: renderRecording,
   save: async (id, blob, startedAt, endedAt) => {
     try {
-      const response = await fetch(`/api/sessions/${id}/recording`, {method: 'POST', headers: {'Content-Type': blob.type, 'X-Recording-Started-At': startedAt, 'X-Recording-Ended-At': endedAt}, body: blob});
+      const response = await authedFetch(`/api/sessions/${id}/recording`, {method: 'POST', headers: {'Content-Type': blob.type, 'X-Recording-Started-At': startedAt, 'X-Recording-Ended-At': endedAt}, body: blob});
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || 'The recording could not be saved.');
       return data;
@@ -392,6 +554,199 @@ const recorder = new ConversationRecorder({
     }
   },
 });
+const screenAwake = new ScreenAwake();
+const facilitator = new LiveFacilitator({
+  onChange: renderFacilitator,
+  onAudio: (samples, rate) => liveStream?.sendAudio(samples, rate),
+  request: async ({audio, requested, mode, signal}) => {
+    // Instant prompts: Gemini Live has already heard everything, so only the check is sent.
+    if (liveStream?.ready) return liveStream.check({requested, mode, elapsedSeconds: recorder.elapsed()});
+    const form = new FormData();
+    form.append('context', JSON.stringify({mode, requested, capture_id: recorder.startedAt, elapsed_seconds: recorder.elapsed(), language: promptLanguage}));
+    form.append('audio', audio, 'latest.wav');
+    // When the person asks, the model hears the whole conversation so far, not just the last minute.
+    const conversation = requested ? recorder.snapshot() : null;
+    if (conversation) form.append('conversation', conversation, 'conversation');
+    const response = await authedFetch(`/api/sessions/${recorder.sessionId}/facilitator`, {method: 'POST', body: form, signal});
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `The prompt couldn’t be updated (${response.status}).`);
+    return data;
+  },
+});
+const LIVE_CHECK_MS = 15000; // Gemini Live has heard everything, so "As we go" can check more often.
+function useInterval(milliseconds) {
+  facilitator.intervalMs = milliseconds;
+  if (facilitator.active && promptMode === 'auto') facilitator.setMode('auto');
+}
+// Instant prompts (experimental): stream this conversation to Gemini Live while prompts are on. Chosen per conversation.
+function openLive() {
+  if (liveStream || !instantPrompts || !config?.live_prompts || promptMode === 'off' || !facilitator.active || !recorder.sessionId) return;
+  const query = new URLSearchParams({capture_id: recorder.startedAt, language: promptLanguage});
+  const stream = new LiveStream({
+    url: `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/sessions/${recorder.sessionId}/live?${query}`,
+    onCue: guidance => {
+      if (liveStream !== stream || !guidance?.prompt) return; // Only a cue (a threat) interrupts what is on screen.
+      facilitator.guidance = guidance;
+      facilitator.update('listening', '');
+    },
+    onClose: message => {
+      if (liveStream !== stream) return;
+      liveStream = null;
+      useInterval(45000);
+      facilitator.update(facilitator.state, `${message} Prompts continue as usual.`);
+    },
+  });
+  liveStream = stream;
+  stream.open().then(() => { if (liveStream === stream) useInterval(LIVE_CHECK_MS); }).catch(() => {});
+}
+function closeLive() {
+  const stream = liveStream;
+  liveStream = null;
+  if (stream) {
+    useInterval(45000);
+    stream.close();
+  }
+}
+function syncFacilitator() {
+  if (recorder.state !== 'recording') { instantCue = null; liveCue = null; }
+  if (recorder.state !== 'recording' || promptMode === 'off' || !instantPrompts) closeLive();
+  if (recorder.state === 'recording' && recorder.stream && recorder.sessionId === session?.id) {
+    // Attach once per capture. After the person turns prompts off, only their own choice turns them back on.
+    if (promptMode !== 'off' && !facilitator.active && facilitator.capture !== recorder.startedAt) facilitator.attach(recorder.stream, promptMode, recorder.startedAt);
+    if (promptMode !== 'off' && facilitator.active) openLive();
+  } else if (recorder.state !== 'requesting' && (facilitator.active || facilitator.context)) {
+    facilitator.stop(); // Prompts end the moment the recording does, before it is saved.
+  }
+}
+function loadPromptHistory() {
+  const key = session?.recording ? `${session.id}:${session.recording.started_at}` : null;
+  if (key === promptHistoryFor) return;
+  promptHistoryFor = key;
+  promptHistory = [];
+  if (!key) return;
+  api(`/sessions/${session.id}/facilitator`).then(result => {
+    if (promptHistoryFor !== key) return;
+    promptHistory = Array.isArray(result.prompts) ? result.prompts : [];
+    renderFacilitator();
+  }).catch(() => {}); // A convenience for looking back; nothing else depends on it.
+}
+function renderFacilitator() {
+  const panel = $('#prompts-panel');
+  const own = recorder.sessionId === session?.id;
+  const recording = own && recorder.state === 'recording';
+  const ending = own && ['stopping', 'saving', 'save_failed'].includes(recorder.state);
+  const saved = Boolean(session?.recording);
+  const available = Boolean(config?.model_configured);
+  const live = recording && promptMode !== 'off';
+  $('#recording-note').textContent = saved || promptMode === 'off' ? 'Audio is saved with this conversation. There are no live alerts or analysis.' : 'Audio is saved with this conversation. Prompts appear below only as you chose. Nothing beeps, vibrates or pops up.';
+  $('#record-stage').classList.toggle('prompts-live', live);
+  panel.classList.toggle('live', recording);
+  panel.hidden = !session?.chosen_plan || ending || (saved && !promptHistory.length);
+  if (panel.hidden) return;
+  $('#prompts-heading').textContent = saved ? 'Prompts from this conversation' : 'Quiet prompts';
+  $('#prompts-pill').hidden = saved;
+  $('#prompts-intro').hidden = recording;
+  $('#prompts-intro').textContent = saved ? 'Prepared while you talked, in order. Your reflection is still yours to write.' : 'Cues from your plan that wait for you to look. Nothing beeps, vibrates or pops up.';
+  $('#prompt-modes').hidden = saved;
+  $$('#prompt-modes input').forEach(input => {
+    input.checked = input.value === promptMode;
+    input.disabled = busy || !available || !['idle', 'error', 'recording'].includes(recorder.state);
+  });
+  // Support fades: early conversations suggest prompts as you go; later ones suggest asking.
+  const earlier = sessionSummaries.filter(item => item.recorded && item.id !== session.id).length;
+  const suggested = earlier < EARLY_CONVERSATIONS ? 'auto' : 'on_request';
+  $$('#prompt-modes .prompt-suggested').forEach(tag => tag.hidden = !available || tag.dataset.mode !== suggested);
+  $('#prompt-suggestion').hidden = recording || saved;
+  $('#prompt-suggestion').textContent = !available ? 'Prompts need a Gemini API key on the server.' : suggested === 'auto' ? 'In your first few conversations, prompts as you go can help you find your footing. You can change this at any time.' : 'You’ve recorded a few conversations here. Asking only when you need a prompt leaves more of the conversation to you.';
+  $('#prompts-privacy').hidden = recording || saved || !available;
+  $('#prompt-voice-tip').hidden = recording || saved || !available || !config?.voice_matching || Boolean(account?.user?.voice_sample);
+  $('#prompt-language-field').hidden = recording || saved || !available;
+  $('#prompt-language').value = promptLanguage;
+  $('#prompt-instant-field').hidden = recording || saved || !available || !config?.live_prompts || promptMode === 'off';
+  $('#prompt-instant').checked = instantPrompts;
+  $('#prompts-live').hidden = !live;
+  $('#prompt-history').hidden = !saved;
+  if (live) renderLivePrompt();
+  if (saved) renderPromptHistory();
+}
+function renderLivePrompt() {
+  const guidance = facilitator.guidance;
+  const halted = ['unavailable', 'paused'].includes(facilitator.state);
+  const card = $('#prompt-card');
+  // Rebuild only when the prompt itself changes, so nothing on screen shifts between updates.
+  // Shown until a newer AI result arrives, so it stays if the AI request fails.
+  const instant = instantCue && instantCue.after === guidance ? instantCue.cue : null;
+  if (!halted && instant) liveCue = instant;
+  if (!halted && guidance?.prompt) liveCue = guidance.prompt;
+  // Keep the last real cue on screen. "Nothing to add" and check timestamps are not shown.
+  const prompt = halted ? null : (instant || guidance?.prompt || liveCue);
+  const key = JSON.stringify([promptMode, halted && facilitator.message, prompt]);
+  if (card.dataset.key !== key) {
+    card.dataset.key = key;
+    card.classList.toggle('empty', !prompt);
+    card.dataset.kind = prompt?.kind || '';
+    if (prompt) {
+      card.replaceChildren(node('p', 'prompt-kind', PROMPT_LABELS[prompt.kind] || 'From your plan'), node('p', 'prompt-text', prompt.text));
+      if (prompt.example_wording) card.append(node('blockquote', '', prompt.example_wording));
+      if (prompt.help) card.append(helpBehindTap(prompt.help));
+      // AI cues are in her chosen language; plan points and the fixed safety wording are not.
+      if (!['planned', 'step_away'].includes(prompt.kind)) card.querySelectorAll('.prompt-text, blockquote').forEach(element => { element.lang = PROMPT_LANGUAGES[promptLanguage]; });
+    } else {
+      card.replaceChildren(node('p', 'prompt-text', halted ? facilitator.message : promptMode === 'auto' ? 'A cue will show here when it would help.' : 'Tap “Get a prompt” whenever you’d like a cue from your plan.'));
+    }
+  }
+  const requesting = facilitator.preparing && facilitator.pendingRequested;
+  $('#prompt-status').textContent = halted ? '' : facilitator.message || (requesting ? 'Preparing a cue…' : '');
+  $('#ask-prompt').disabled = !facilitator.active || facilitator.preparing;
+  $('#ask-prompt').textContent = requesting ? 'Preparing…' : 'Get a prompt';
+  renderPromptOutline(guidance);
+}
+// Helplines wait behind a tap: family members may be able to see the screen.
+function helpBehindTap(help) {
+  const details = node('details', 'prompt-help');
+  details.append(node('summary', '', 'More help'), node('p', '', help));
+  return details;
+}
+function renderPromptOutline(guidance) {
+  const outline = $('#prompt-outline');
+  const plan = session.chosen_plan;
+  const key = JSON.stringify([session.id, plan.steps.map(step => [step.id, step.purpose]), guidance?.current_step_id, guidance?.raised_goal_ids]);
+  if (outline.dataset.key === key) return;
+  outline.dataset.key = key;
+  const route = node('div');
+  const steps = node('ol', 'prompt-steps');
+  plan.steps.forEach((step, index) => {
+    const item = node('li');
+    item.append(node('span', 'prompt-step-number', String(index + 1).padStart(2, '0')), node('span', 'prompt-step-title', step.purpose));
+    if (step.id === guidance?.current_step_id) { item.setAttribute('aria-current', 'step'); item.append(node('span', 'prompt-now', 'Now')); }
+    steps.append(item);
+  });
+  route.append(node('h3', '', 'Your plan'), steps);
+  const raised = new Set(guidance?.raised_goal_ids || []);
+  const progress = node('div');
+  const goals = node('ul', 'prompt-goals');
+  session.preparation.goals.forEach(goal => {
+    const item = node('li', raised.has(goal.id) ? 'raised' : '');
+    item.append(node('span', 'visually-hidden', raised.has(goal.id) ? 'Raised: ' : 'Not raised yet: '), document.createTextNode(goal.description));
+    goals.append(item);
+  });
+  progress.append(node('h3', '', `Goals raised so far: ${raised.size} of ${session.preparation.goals.length}`), goals);
+  outline.replaceChildren(route, progress);
+}
+function renderPromptHistory() {
+  if (renderedHistory === promptHistory) return;
+  renderedHistory = promptHistory;
+  $('#prompt-history').replaceChildren(...promptHistory.map(prompt => {
+    const item = node('li');
+    item.dataset.kind = prompt.kind;
+    const detail = node('div');
+    detail.append(node('strong', '', PROMPT_LABELS[prompt.kind] || 'Prompt'), node('p', '', prompt.text));
+    if (prompt.example_wording) detail.append(node('blockquote', '', prompt.example_wording));
+    if (prompt.help) detail.append(node('p', 'prompt-help-text', prompt.help)); // In full afterwards, in private.
+    item.append(node('span', 'prompt-time', formatDuration(prompt.elapsed_seconds)), detail);
+    return item;
+  }));
+}
 function renderRecording() {
   if (recorder.state === 'saved' && recorder.savedSession?.id === session?.id) {
     // Reflection may have been saved while audio was uploading; only merge recording.
@@ -401,6 +756,9 @@ function renderRecording() {
       $('#summary-outdated').hidden = false;
     }
   }
+  syncFacilitator();
+  screenAwake.set(recorder.state === 'recording');
+  loadPromptHistory();
   const saved = session?.recording;
   $('#recording-status').textContent = recorder.message || (saved ? 'Recording saved.' : session?.chosen_plan ? 'Ready when you are.' : 'Save your conversation plan before starting a recording.');
   $('#recording-timer').textContent = formatDuration(saved?.duration_seconds || recorder.elapsed());
@@ -424,13 +782,36 @@ function renderRecording() {
   if (saved && audio.getAttribute('src') !== saved.url) audio.src = saved.url;
   if (!saved) audio.removeAttribute('src');
   $('#recording-saved').hidden = !saved;
+  $('#rerecord').hidden = !saved;
+  renderFollowUp();
   renderSummarySources();
   $('#recording-help').textContent = saved ? 'You can listen back here. The optional summary can use this audio after your self-evaluation.' : 'Keep this page open while recording. Let everyone know before you start.';
   updateLocks();
 }
 
 $('#preparation-fields').addEventListener('input', preparationChanged);
-$$('[data-add]').forEach(button => button.addEventListener('click', () => { appendEntry(button.dataset.add)?.focus(); preparationChanged(); }));
+$$('[data-add]').forEach(button => button.addEventListener('click', () => {
+  const field = button.dataset.add === 'audience' ? appendPerson() : appendEntry(button.dataset.add);
+  field?.focus();
+  preparationChanged();
+}));
+$('#audience').addEventListener('input', event => {
+  if (event.target.matches('input')) separatePerson(event.target);
+});
+$('#audience').addEventListener('keydown', event => {
+  if (!event.target.matches('input')) return;
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    separatePerson(event.target, true);
+  } else if (event.key === 'Backspace' && event.target.value === '' && $('#audience').children.length > 1) {
+    event.preventDefault();
+    const row = event.target.closest('.entry-row');
+    const previous = row.previousElementSibling?.querySelector('input');
+    row.remove();
+    previous?.focus();
+    preparationChanged();
+  }
+});
 $('#save-preparation').addEventListener('click', () => task(async () => {
   const changed = await savePreparation();
   if (changed) { renderClarifications(); renderPlan(); }
@@ -501,17 +882,57 @@ $('#back-prepare').addEventListener('click', () => { if (!busy && !recorder.pend
 $('#back-record').addEventListener('click', () => { if (!busy && !recorder.pending) setStage('record'); });
 $('#new-session').addEventListener('click', () => {
   if (!canLeave()) return;
-  recorder.reset(); session = null; dirty.clear(); notice(''); renderSession(); setStage('prepare'); $('#audience').focus();
+  recorder.reset(); facilitator.reset(); session = null; dirty.clear(); notice(''); renderSession(); setStage('prepare'); $('#audience input')?.focus();
 });
 $('#delete-session').addEventListener('click', () => {
   if (!session || !canLeave() || !window.confirm('Delete this conversation, its recording and all reflections? This cannot be undone.')) return;
-  task(async () => { await api(`/sessions/${session.id}`, 'DELETE'); recorder.reset(); session = null; dirty.clear(); renderSession(); setStage('prepare'); await refreshHistory(); notice('Conversation deleted.'); });
+  task(async () => { await api(`/sessions/${session.id}`, 'DELETE'); recorder.reset(); facilitator.reset(); session = null; dirty.clear(); renderSession(); setStage('prepare'); await refreshHistory(); notice('Conversation deleted.'); });
 });
 $('#start-recording').addEventListener('click', () => {
   if (dirty.has('preparation') || dirty.has('plan')) { notice('Save your preparation and chosen plan before recording.', true); setStage('prepare'); return; }
+  if (promptMode !== 'off') facilitator.prepare(); // Phones only allow audio processing to start from a tap.
   recorder.start(session.id);
 });
 $('#stop-recording').addEventListener('click', () => recorder.stop());
+$('#prompt-modes').addEventListener('change', event => {
+  promptMode = event.target.value;
+  if (recorder.state === 'recording' && recorder.sessionId === session?.id) {
+    if (promptMode === 'off') facilitator.stop();
+    else if (facilitator.active) facilitator.setMode(promptMode);
+    else { facilitator.prepare(); facilitator.attach(recorder.stream, promptMode, recorder.startedAt); }
+    if (promptMode === 'off') closeLive();
+    else if (facilitator.active) openLive();
+  }
+  renderFacilitator();
+});
+$('#rerecord').addEventListener('click', () => {
+  if (!session?.recording || recorder.pending) return;
+  if (!window.confirm('Discard this recording and record again? The audio and any prompts from it will be deleted. Your reflection is kept. This can’t be undone.')) return;
+  task(async () => {
+    session = await api(`/sessions/${session.id}/recording`, 'DELETE');
+    recorder.reset(); // Otherwise the finished recorder would merge the old recording back in.
+    facilitator.reset();
+    renderRecording();
+    renderSummary();
+    notice('Recording discarded. You can record the conversation again.');
+  });
+});
+$('#ask-prompt').addEventListener('click', () => {
+  // Her next planned point appears at once; the AI cue replaces it when it arrives.
+  if (facilitator.active && !facilitator.preparing) instantCue = {cue: nextPlannedPoint(session?.chosen_plan, facilitator.guidance), after: facilitator.guidance};
+  facilitator.ask(true);
+  renderFacilitator();
+});
+$('#prompt-instant').addEventListener('change', event => {
+  instantPrompts = event.target.checked;
+  renderFacilitator();
+});
+$('#prompt-language').addEventListener('change', event => {
+  promptLanguage = PROMPT_LANGUAGES[event.target.value] ? event.target.value : 'en';
+  try { localStorage.setItem('cg-prompt-language', promptLanguage); } catch { /* not remembered, but used for this conversation */ }
+});
+// Browsers drop the screen lock when the page is hidden; take it again on return.
+document.addEventListener('visibilitychange', () => screenAwake.set(recorder.state === 'recording'));
 $('#retry-recording').addEventListener('click', () => recorder.persist());
 $('#discard-recording').addEventListener('click', () => {
   if (window.confirm('Discard this unsaved audio? Download a backup first if you want to keep it.')) { recorder.discard(); renderRecording(); }
@@ -537,9 +958,36 @@ window.addEventListener('beforeunload', event => { if (dirty.size || recorder.pe
 window.addEventListener('pagehide', () => { if (recorder.state === 'recording') recorder.interrupt(); });
 
 renderSession();
-await task(async () => {
-  config = await api('/config');
-  $('#profile').replaceChildren(document.createTextNode(config.profile.name + ' '), node('span', '', config.profile.pronouns));
-  $('#model-status').textContent = config.model_configured ? '' : 'AI planning needs a Gemini API key on the server.';
-  await refreshHistory();
+$('#follow-up-form').addEventListener('submit', event => {
+  event.preventDefault();
+  if (!session) return;
+  const reason = event.currentTarget.querySelector('input[name="reason"]:checked')?.value;
+  if (!reason) { notice('Choose what got in the way.', true); return; }
+  task(async () => {
+    session = await api(`/sessions/${session.id}/follow-up`, 'PUT',
+      {status: 'not_yet', reason, next_try: $('#follow-up-date').value || null, note: $('#follow-up-note').value});
+    renderFollowUp();
+    notice('Saved. Your preparation is kept for when you’re ready.');
+    await refreshHistory();
+  });
 });
+$('#open-insights').addEventListener('click', showInsights);
+account = new Account({
+  onSignedIn: () => task(async () => {
+    config = await api('/config');
+    $('#model-status').textContent = config.model_configured ? '' : 'AI planning needs a Gemini API key on the server.';
+    await refreshHistory();
+    $('#open-insights').hidden = !account.user?.insight_viewer;
+    showCheckIn();
+  }),
+  // Signing out or deleting the account reloads the page: never mid-recording, and unsaved changes need her OK.
+  canSignOut: () => {
+    if (recorder.pending) return {ok: false, message: 'Stop and save the recording before signing out.'};
+    if (!canLeave()) return {ok: false};
+    dirty.clear();
+    return {ok: true};
+  },
+});
+await account.start();
+// Recording counts as activity: keep her signed in while a conversation is being recorded.
+setInterval(() => { if (recorder.state === 'recording') authedFetch('/api/auth/me').catch(() => {}); }, 5 * 60 * 1000);

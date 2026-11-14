@@ -1,1 +1,4 @@
 Flask>=3.1,<4
+# Instant prompts (Gemini Live, experimental)
+google-genai==2.33.0
+flask-sock==0.7.0

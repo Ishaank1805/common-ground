@@ -1,0 +1,6 @@
+# Optional voice matching (voice.py). Install CPU-only PyTorch first:
+#   pip install --index-url https://download.pytorch.org/whl/cpu torch==2.5.1 torchaudio==2.5.1
+speechbrain==1.0.3
+silero-vad==5.1.2
+# SpeechBrain 1.0.x passes use_auth_token, which huggingface_hub 1.0 removed.
+huggingface_hub==0.36.2

@@ -59,3 +59,126 @@
 #expectations-context { margin:10px 0 14px; }
 #summary-used-sources { margin-top:18px; }
 @media(max-width:700px) { .stage-navigation .button { flex:1 1 150px; } }
+
+/* Quiet prompts: optional support that waits to be looked at. No sound, motion or announcements.
+   The cue card deliberately mirrors the plan's "You could say" block: it is the plan, resurfacing. */
+.visually-hidden { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+.prompts-panel .section-heading { margin-bottom:8px; align-items:center; }
+.prompts-panel > .help { max-width:600px; }
+.prompt-modes { display:grid; gap:9px; margin:20px 0 6px; }
+.prompt-modes .prompt-mode { display:flex; gap:13px; align-items:flex-start; margin:0; padding:14px 16px; border:1px solid var(--line); border-radius:8px; background:var(--white); font-weight:400; cursor:pointer; }
+.prompt-mode input { width:auto; flex:0 0 auto; margin:3px 0 0; padding:0; accent-color:var(--green); }
+.prompt-mode strong { display:block; font-size:14px; font-weight:600; }
+.prompt-mode small { display:block; font-size:12px; color:var(--muted); line-height:1.5; margin-top:2px; }
+.prompt-mode:has(input:checked) { border-color:#9fb6a5; background:#f1f5ee; }
+.prompt-mode:has(input:disabled) { cursor:not-allowed; opacity:.6; }
+.prompt-suggested { display:inline-block; margin-left:7px; padding:1px 8px; font-size:10px; font-weight:600; color:#65765e; background:#edf0e7; border:1px solid #e4e9dc; border-radius:20px; vertical-align:1px; }
+/* While recording, the choice shrinks to one row so it can still be changed mid-conversation. */
+.prompts-panel.live .prompt-modes { grid-template-columns:repeat(3, minmax(0, 1fr)); gap:0; margin:4px 0 20px; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+.prompts-panel.live .prompt-modes .prompt-mode { border:0; border-radius:0; padding:10px 12px; align-items:center; justify-content:center; gap:8px; }
+.prompts-panel.live .prompt-modes .prompt-mode + .prompt-mode { border-left:1px solid var(--line); }
+.prompts-panel.live .prompt-mode small, .prompts-panel.live .prompt-suggested { display:none; }
+.prompts-panel.live .prompt-mode strong { font-size:12px; font-weight:550; }
+.prompts-panel.live .prompt-mode input { margin:0; }
+.prompt-card { background:#f2eee4; border-radius:8px; padding:19px 21px; }
+.prompt-card.empty { background:#f3f5ed; }
+.prompt-kind { margin:0 0 8px; font-size:10px; text-transform:uppercase; letter-spacing:1.2px; color:#8b7151; font-weight:650; }
+.prompt-text { margin:0; font-size:15px; line-height:1.6; overflow-wrap:anywhere; }
+.prompt-card.empty .prompt-text { color:var(--muted); font-size:13px; }
+.prompt-card blockquote { margin:12px 0 0; font-family:Georgia, serif; font-size:19px; line-height:1.6; color:#514a3b; overflow-wrap:anywhere; }
+#prompt-status { min-height:19px; margin-top:9px; }
+#prompts-live > .actions { margin-top:12px; }
+#prompt-suggestion { margin-top:14px; }
+.prompt-language { max-width:320px; }
+.prompt-language select { margin-top:8px; }
+/* The safety cue looks like any other cue, since family members may see the screen; helplines wait behind "More help". */
+.prompt-help { margin-top:12px; font-size:13px; }
+.prompt-help summary { width:max-content; color:var(--muted); cursor:pointer; }
+.prompt-help p { margin:6px 0 0; line-height:1.6; }
+.prompt-history .prompt-help-text { color:var(--terracotta); }
+.prompt-outline { display:grid; grid-template-columns:minmax(0, 1.25fr) minmax(0, 1fr); gap:20px 30px; margin-top:26px; }
+.prompt-outline h3 { margin:0 0 6px; font-size:12px; font-weight:600; color:var(--muted); }
+.prompt-steps, .prompt-goals { list-style:none; margin:0; padding:0; font-size:13px; }
+.prompt-steps li { display:flex; gap:10px; align-items:baseline; padding:7px 0; border-top:1px solid var(--line); color:var(--muted); }
+.prompt-step-number { flex:0 0 auto; font-size:11px; font-weight:650; color:#91a183; font-variant-numeric:tabular-nums; }
+.prompt-step-title { min-width:0; overflow-wrap:anywhere; }
+.prompt-steps li[aria-current] { color:var(--ink); font-weight:600; }
+.prompt-steps li[aria-current] .prompt-step-number { color:var(--terracotta); }
+.prompt-now { margin-left:auto; flex:0 0 auto; font-size:10px; font-weight:650; color:var(--terracotta); }
+.prompt-goals li { position:relative; padding:7px 0 7px 20px; border-top:1px solid var(--line); color:var(--muted); overflow-wrap:anywhere; }
+.prompt-goals li::before { content:""; position:absolute; left:2px; top:13px; width:9px; height:9px; border:1.5px solid #b4c1ae; border-radius:50%; box-sizing:border-box; }
+.prompt-goals li.raised { color:var(--ink); }
+.prompt-goals li.raised::before { background:var(--green); border-color:var(--green); }
+.prompt-history { list-style:none; margin:14px 0 0; padding:0; font-size:13px; }
+.prompt-history li { display:grid; grid-template-columns:52px minmax(0, 1fr); gap:12px; padding:13px 0; border-top:1px solid var(--line); }
+.prompt-time { color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; padding-top:1px; }
+.prompt-history strong { display:block; font-size:11px; font-weight:650; color:#8b7151; }
+.prompt-history p { margin:2px 0 0; overflow-wrap:anywhere; }
+.prompt-history blockquote { margin:6px 0 0; font-family:Georgia, serif; font-size:15px; line-height:1.6; color:#514a3b; overflow-wrap:anywhere; }
+@media(max-width:700px) {
+  /* On a phone, the recorder tightens up so the current prompt is visible without scrolling far. */
+  #record-stage.prompts-live .recording-panel { padding-top:20px; padding-bottom:18px; }
+  #record-stage.prompts-live .recording-display { padding-top:10px; }
+  #record-stage.prompts-live .recording-orb { width:58px; height:58px; margin-bottom:6px; }
+  #record-stage.prompts-live #recording-help, #record-stage.prompts-live #recording-note { display:none; }
+  .prompts-panel.live .prompt-modes .prompt-mode { padding:9px 4px; gap:5px; }
+  .prompts-panel.live .prompt-mode strong { font-size:11px; }
+  .prompt-card { padding:16px; }
+  .prompt-card blockquote { font-size:17px; }
+  .prompt-outline { grid-template-columns:minmax(0, 1fr); gap:16px; }
+}
+
+/* Accounts: sign in, create an account, recover, and settings. */
+.account-area { display:flex; align-items:center; gap:16px; }
+.auth-view { min-height:calc(100vh - 88px); display:grid; place-items:start center; padding:56px 20px; }
+.auth-card { width:100%; max-width:460px; }
+.auth-card h1 { font-size:32px; margin-bottom:6px; }
+.auth-form .actions .button { width:100%; }
+.auth-switch { display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; margin:16px 0 0; }
+.auth-privacy { margin-top:22px; padding-top:16px; border-top:1px solid var(--line); }
+.password-field { display:flex; align-items:center; gap:8px; }
+.password-field .reveal { flex:0 0 auto; min-width:44px; min-height:44px; }
+.recovery-code { margin:18px 0 0; padding:16px; border-radius:8px; background:#f2eee4; text-align:center; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:19px; letter-spacing:1px; overflow-wrap:anywhere; user-select:all; }
+.checkbox { display:flex; gap:10px; align-items:flex-start; font-weight:400; }
+.checkbox input { width:auto; margin-top:4px; accent-color:var(--green); }
+.account-dialog { width:min(560px, calc(100% - 32px)); max-height:calc(100% - 48px); padding:28px; border:1px solid var(--line); border-radius:12px; background:var(--white); color:var(--ink); box-shadow:var(--shadow); }
+.account-dialog::backdrop { background:#1f2d2766; }
+.account-dialog form { border-top:1px solid var(--line); padding-top:18px; margin-top:22px; }
+.account-dialog h3 { margin-bottom:0; }
+.danger-zone { border-top:1px solid var(--line); margin-top:22px; padding-top:18px; }
+.danger-zone summary { cursor:pointer; color:#95604d; font-size:13px; font-weight:550; }
+.danger-zone form { border:0; padding-top:0; margin-top:8px; }
+.danger-button { background:#9f563f; color:white; }
+.danger-button:hover:not(:disabled) { background:#86462f; }
+@media(max-width:700px) { .recovery-code { font-size:15px; letter-spacing:.3px; padding:14px 8px; } .auth-view { min-height:calc(100vh - 72px); padding:28px 16px; } .account-area { gap:10px; } .account-dialog { padding:22px 18px; } }
+
+/* Optional voice sample in account settings. */
+.voice-section { border-top:1px solid var(--line); padding-top:18px; margin-top:22px; }
+.voice-sentence { margin:14px 0 0; padding:14px 16px; border-radius:8px; background:#f2eee4; font-family:Georgia, serif; font-size:17px; line-height:1.6; color:#514a3b; }
+
+/* Follow-up when a conversation hasn't happened yet, the check-in, and insights. */
+.check-in { margin:0 0 18px; padding:16px 18px; border:1px solid var(--line); border-radius:10px; background:#f2eee4; }
+.check-in p { margin:0 0 10px; }
+.follow-up-panel summary { cursor:pointer; font-weight:600; }
+.follow-up-panel[open] summary { margin-bottom:10px; }
+.follow-up-reasons { border:0; padding:0; margin:6px 0 14px; display:grid; gap:8px; }
+.follow-up-reasons legend { font-weight:600; margin-bottom:6px; }
+.follow-up-reasons label { display:flex; gap:10px; align-items:center; font-weight:400; }
+.follow-up-advice { margin-top:14px; padding:14px 16px; border-radius:8px; background:#edf2ec; }
+.follow-up-advice p { margin:0 0 6px; }
+.share-check { display:flex; gap:10px; align-items:center; font-weight:400; }
+.insights-dialog ul { margin:6px 0 14px; padding-left:18px; }
+.insights-dialog h3 { margin:16px 0 4px; font-size:15px; }
+
+/* Team access (admins) in account settings. */
+.team-list { margin:10px 0 14px; padding-left:18px; }
+.team-list li { margin-bottom:6px; }
+.team-list .text-button { margin-left:8px; }
+.team-form select { width:100%; }
+
+/* Instant prompts (Gemini Live) choice on the Record step. */
+.prompt-instant { margin: 10px 0; }
+
+/* One text box per person. Space or a comma opens the next box. */
+.people-field { margin-top: 0; }
+.person-row input { min-height: 44px; }

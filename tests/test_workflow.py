@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from app import create_app
+from tests.support import signed_in
 
 
 class WorkflowTest(unittest.TestCase):
@@ -21,7 +22,7 @@ class WorkflowTest(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as folder:
             app = create_app({"TESTING": True, "DATA_DIR": folder})
-            client = app.test_client()
+            client = signed_in(app.test_client())
             created = client.post("/api/sessions", json={"preparation": prep})
             self.assertEqual(created.status_code, 201)
             sid = created.json["id"]
@@ -60,7 +61,7 @@ class WorkflowTest(unittest.TestCase):
             evaluation["reflection"] = "We agreed to look at the timetable together."
             result = client.put(url + "/evaluation", json=evaluation)
             self.assertTrue(result.json["summary"]["outdated"])
-            reopened = create_app({"TESTING": True, "DATA_DIR": folder}).test_client().get(url)
+            reopened = signed_in(create_app({"TESTING": True, "DATA_DIR": folder}).test_client()).get(url)
             self.assertEqual(reopened.json["evaluation"]["reflection"], evaluation["reflection"])
             self.assertEqual(reopened.json["chosen_plan"], chosen)
             self.assertEqual(client.delete(url).status_code, 204)

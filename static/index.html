@@ -9,8 +9,65 @@
   <script type="module" src="/static/app.js"></script>
 </head>
 <body>
-  <header class="topbar"><a class="brand" href="/" aria-label="Common Ground home"><span class="brand-mark" aria-hidden="true">cg</span><span>Common Ground</span></a><span class="profile" id="profile">Ananth <span>he/him</span></span></header>
-  <div class="workspace">
+  <header class="topbar"><a class="brand" href="/" aria-label="Common Ground home"><span class="brand-mark" aria-hidden="true">cg</span><span>Common Ground</span></a><div class="account-area" id="account-area" hidden><span class="profile" id="profile"></span><button type="button" class="text-button" id="open-insights" hidden>Insights</button><button type="button" class="text-button" id="open-account">Account</button></div></header>
+  <section id="auth-view" class="auth-view" aria-label="Your account" hidden>
+    <div class="panel auth-card">
+      <div id="auth-message" class="notice" role="status" aria-live="polite" hidden></div>
+      <form method="post" id="signin-form" class="auth-form">
+        <p class="eyebrow">Welcome back</p>
+        <h1>Sign in</h1>
+        <label for="signin-username">Username</label>
+        <input id="signin-username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="32">
+        <label for="signin-password">Password</label>
+        <div class="password-field"><input id="signin-password" name="password" type="password" autocomplete="current-password" required maxlength="256"><button type="button" class="text-button reveal" aria-controls="signin-password" aria-pressed="false">Show</button></div>
+        <div class="actions"><button type="submit" class="button primary">Sign in</button></div>
+        <p class="auth-switch"><button type="button" class="text-button" data-auth="register">Create an account</button><button type="button" class="text-button" data-auth="recover">Forgot your password?</button></p>
+      </form>
+      <form method="post" id="register-form" class="auth-form" hidden>
+        <p class="eyebrow">New here</p>
+        <h1>Create your account</h1>
+        <p class="help">Only you can see your conversations.</p>
+        <label for="register-name">Your name</label>
+        <input id="register-name" name="name" autocomplete="name" required maxlength="60">
+        <label for="register-pronouns">Your pronouns</label>
+        <input id="register-pronouns" name="pronouns" list="pronoun-options" required maxlength="30" placeholder="she/her" aria-describedby="register-pronouns-help">
+        <p class="help" id="register-pronouns-help">Used when your plans and summaries refer to you.</p>
+        <label for="register-username">Username</label>
+        <input id="register-username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required minlength="3" maxlength="32" aria-describedby="register-username-help">
+        <p class="help" id="register-username-help">3–32 letters, numbers, dots, dashes or underscores. You’ll use it to sign in.</p>
+        <label for="register-password">Password</label>
+        <div class="password-field"><input id="register-password" name="password" type="password" autocomplete="new-password" required minlength="15" maxlength="256" aria-describedby="register-password-help"><button type="button" class="text-button reveal" aria-controls="register-password" aria-pressed="false">Show</button></div>
+        <p class="help" id="register-password-help">At least 15 characters. A short sentence you’ll remember works well, like “my sister’s blue bicycle”. <span class="password-count" data-for="register-password"></span></p>
+        <div class="actions"><button type="submit" class="button primary">Create account</button></div>
+        <p class="auth-switch"><button type="button" class="text-button" data-auth="signin">I already have an account</button></p>
+      </form>
+      <form method="post" id="recover-form" class="auth-form" hidden>
+        <p class="eyebrow">Forgot your password</p>
+        <h1>Reset your password</h1>
+        <p class="help">Use the recovery code you saved when you created your account.</p>
+        <label for="recover-username">Username</label>
+        <input id="recover-username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="32">
+        <label for="recover-code">Recovery code</label>
+        <input id="recover-code" name="recovery_code" autocomplete="off" autocapitalize="characters" spellcheck="false" required maxlength="40" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX">
+        <label for="recover-password">New password</label>
+        <div class="password-field"><input id="recover-password" name="new_password" type="password" autocomplete="new-password" required minlength="15" maxlength="256" aria-describedby="recover-password-help"><button type="button" class="text-button reveal" aria-controls="recover-password" aria-pressed="false">Show</button></div>
+        <p class="help" id="recover-password-help">At least 15 characters. <span class="password-count" data-for="recover-password"></span></p>
+        <div class="actions"><button type="submit" class="button primary">Reset password</button></div>
+        <p class="auth-switch"><button type="button" class="text-button" data-auth="signin">Back to sign in</button></p>
+      </form>
+      <div id="recovery-code-view" hidden>
+        <p class="eyebrow">Keep this safe</p>
+        <h1>Your recovery code</h1>
+        <p class="help">If you forget your password, this code is the only way back into your account. Write it down or keep it somewhere private. It won’t be shown again.</p>
+        <p class="recovery-code" id="recovery-code"></p>
+        <div class="actions"><button type="button" class="button secondary" id="copy-recovery-code">Copy code</button></div>
+        <label class="checkbox"><input type="checkbox" id="recovery-saved"> I’ve saved my recovery code somewhere private.</label>
+        <div class="actions"><button type="button" class="button primary" id="recovery-continue" disabled>Continue</button></div>
+      </div>
+      <p class="help auth-privacy">On a shared phone, sign out when you’re done. You’re signed out automatically after 30 minutes without activity.</p>
+    </div>
+  </section>
+  <div class="workspace" id="workspace" hidden>
     <aside class="sidebar" aria-label="Your conversations">
       <button class="button primary" id="new-session">＋ New conversation</button>
       <h2 class="eyebrow">Your conversations</h2>
@@ -20,6 +77,7 @@
     <main>
       <div class="page-heading"><div><p class="eyebrow">Space for your point of view</p><h1 id="page-title">Start with what matters.</h1><p id="page-description">Prepare for a conversation, capture it, and reflect in your own words.</p></div><button id="delete-session" class="text-button danger" hidden>Delete conversation</button></div>
       <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+      <div id="check-in" class="check-in" role="region" aria-label="Check-in" hidden></div>
       <p id="stage-progress" class="stage-progress" role="status">Step 1 of 3 · Prepare</p>
       <nav id="stage-tabs" class="stage-tabs" aria-label="Completed conversation" hidden>
         <button type="button" data-stage="prepare" aria-controls="prepare-stage">Preparation</button>
@@ -30,7 +88,7 @@
         <form id="preparation-form" class="panel">
           <div class="section-heading"><div><p class="eyebrow">Before the conversation</p><h2>What would you like to say?</h2></div><span class="pill">Your starting point</span></div>
           <fieldset id="preparation-fields">
-            <label for="audience">Who are you speaking to?</label><input id="audience" name="audience" placeholder="Mother, father" required maxlength="2000" aria-describedby="audience-help"><p class="help" id="audience-help">Separate people or relationships with commas.</p>
+            <div class="field-group people-field"><div class="label-row"><label id="audience-label">Who are you speaking to?</label><button type="button" class="add-button" data-add="audience" aria-label="Add a person">＋ Add person</button></div><div id="audience" aria-labelledby="audience-label"></div><p class="help" id="audience-help">Press space after each person. “mother father” becomes two boxes.</p></div>
             <label for="topic">What is the conversation about?</label><input id="topic" name="topic" placeholder="One general topic" required maxlength="2000">
             <div class="field-group"><div class="label-row"><label id="goals-label">What do you want to achieve?</label><button type="button" class="add-button" data-add="goals" aria-label="Add a goal">＋ Add goal</button></div><div id="goals" aria-labelledby="goals-label"></div></div>
             <div class="expectations"><h3>Your expectations</h3><p class="help">Your sense of how the conversation might go. It’s okay to leave these blank.</p><div class="field-group"><div class="label-row"><label id="positives-label">What do you think will go well?</label><button type="button" class="add-button" data-add="positives" aria-label="Add something that might go well">＋ Add</button></div><div id="positives" aria-labelledby="positives-label"></div></div><div class="field-group"><div class="label-row"><label id="barriers-label">What do you think could be a barrier?</label><button type="button" class="add-button" data-add="barriers" aria-label="Add a possible barrier">＋ Add</button></div><div id="barriers" aria-labelledby="barriers-label"></div></div></div>
@@ -42,10 +100,126 @@
         <section class="panel plan-panel" id="plan-panel" hidden><div class="section-heading"><div><p class="eyebrow">A possible way forward</p><h2>Your conversation plan</h2></div><span class="pill">AI draft · editable</span></div><div class="plan-toolbar"><p class="help">A suggested sequence. Use the words that feel right to you.</p><button type="button" class="button secondary" id="edit-plan" aria-controls="plan-editor" aria-expanded="false">Edit wording</button></div><form id="chosen-plan-form"><div id="plan-preview"></div><div id="plan-editor" hidden></div><div class="actions"><button class="button primary" type="submit" id="save-plan">Save this plan</button><button class="button secondary" type="button" id="reject-plan">Discard suggestions</button><span class="help" id="plan-save-status"></span></div></form></section>
         <div class="stage-navigation"><button type="button" class="button primary" id="go-record">Next: Record →</button></div>
       </section>
-      <section id="record-stage" class="stage-panel" aria-label="Record" hidden><div class="panel recording-panel"><p class="eyebrow">During the conversation</p><h2>Be present. We’ll keep the recording.</h2><p class="muted">Audio is saved with this conversation. There are no live alerts or analysis.</p><div class="recording-display"><div id="recording-orb" class="recording-orb" aria-hidden="true"><span></span></div><div class="timer" id="recording-timer">00:00</div><p id="recording-status" role="status" aria-live="polite">Ready when you are.</p></div><p class="help" id="recording-help">Keep this page open while recording. Let everyone know before you start.</p><div class="actions centered"><button class="button primary" id="start-recording">Start recording</button><button class="button stop" id="stop-recording" hidden>Stop and save</button><button class="button primary" id="retry-recording" hidden>Retry save</button><a class="button secondary" id="download-recording" hidden>Download a backup</a><button class="text-button danger" id="discard-recording" hidden>Discard captured audio</button></div><audio id="recording-playback" controls preload="metadata" hidden></audio><p id="recording-saved" class="help" hidden>Saved as MP4. You can return to this recording later.</p></div><div class="stage-navigation"><button type="button" class="button secondary" id="back-prepare">← Back to preparation</button><button type="button" class="button primary" id="go-reflect">Next: Self-evaluation →</button></div></section>
+      <section id="record-stage" class="stage-panel" aria-label="Record" hidden><div class="panel recording-panel"><p class="eyebrow">During the conversation</p><h2>Be present. We’ll keep the recording.</h2><p class="muted" id="recording-note">Audio is saved with this conversation. There are no live alerts or analysis.</p><div class="recording-display"><div id="recording-orb" class="recording-orb" aria-hidden="true"><span></span></div><div class="timer" id="recording-timer">00:00</div><p id="recording-status" role="status" aria-live="polite">Ready when you are.</p></div><p class="help" id="recording-help">Keep this page open while recording. Let everyone know before you start.</p><div class="actions centered"><button class="button primary" id="start-recording">Start recording</button><button class="button stop" id="stop-recording" hidden>Stop and save</button><button class="button primary" id="retry-recording" hidden>Retry save</button><a class="button secondary" id="download-recording" hidden>Download a backup</a><button class="text-button danger" id="discard-recording" hidden>Discard captured audio</button></div><audio id="recording-playback" controls preload="metadata" hidden></audio><p id="recording-saved" class="help" hidden>Saved as MP4. You can return to this recording later.</p><button type="button" class="text-button danger" id="rerecord" hidden>Discard and record again</button></div>
+        <section class="panel prompts-panel" id="prompts-panel" aria-labelledby="prompts-heading" hidden>
+          <div class="section-heading"><h2 id="prompts-heading">Quiet prompts</h2><span class="pill" id="prompts-pill">Optional</span></div>
+          <p class="help" id="prompts-intro">Cues from your plan that wait for you to look. Nothing beeps, vibrates or pops up.</p>
+          <fieldset id="prompt-modes" class="prompt-modes">
+            <legend class="visually-hidden">When should prompts appear?</legend>
+            <label class="prompt-mode"><input type="radio" name="prompt-mode" value="off" checked><span><strong>No prompts</strong><small>Have this conversation on your own.</small></span></label>
+            <label class="prompt-mode"><input type="radio" name="prompt-mode" value="on_request"><span><strong>When I ask <span class="prompt-suggested" data-mode="on_request" hidden>Suggested</span></strong><small>Tap “Get a prompt” whenever you’d like a cue drawn from the whole conversation so far.</small></span></label>
+            <label class="prompt-mode"><input type="radio" name="prompt-mode" value="auto"><span><strong>As we go <span class="prompt-suggested" data-mode="auto" hidden>Suggested</span></strong><small>A cue refreshes about every 45 seconds, only when it might help.</small></span></label>
+          </fieldset>
+          <label class="share-check prompt-instant" id="prompt-instant-field" hidden><input type="checkbox" id="prompt-instant"> Instant prompts (experimental): the whole conversation streams to Google while prompts are on, so cues arrive in about a second.</label>
+          <label class="prompt-language" id="prompt-language-field" for="prompt-language">Prompt language
+            <select id="prompt-language"><option value="en">English</option><option value="hi" lang="hi">हिन्दी (Hindi)</option><option value="hinglish">Hinglish</option></select>
+          </label>
+          <p class="help" id="prompt-suggestion"></p>
+          <p class="help" id="prompt-voice-tip" hidden>Tip: add a voice sample in Account so prompts can tell your voice from your family’s.</p>
+          <p class="help" id="prompts-privacy">With prompts on, audio is sent to Google Gemini each time a prompt is prepared: the conversation so far when you ask, or the latest minute for prompts as you go. Prompts and brief notes are saved with this conversation and deleted with it. Let everyone know before you start.</p>
+          <div id="prompts-live" hidden>
+            <div id="prompt-card" class="prompt-card"></div>
+            <p class="help" id="prompt-status"></p>
+            <div class="actions"><button type="button" class="button secondary" id="ask-prompt">Get a prompt</button></div>
+            <div id="prompt-outline" class="prompt-outline"></div>
+          </div>
+          <ol id="prompt-history" class="prompt-history" hidden></ol>
+        </section>
+        <details class="panel follow-up-panel" id="follow-up-panel" hidden>
+          <summary>Haven’t had this conversation yet?</summary>
+          <p class="help">That’s okay. Tell us what got in the way, and we’ll help you get ready for another try. This stays private to you.</p>
+          <form method="post" id="follow-up-form">
+            <fieldset class="follow-up-reasons"><legend>What got in the way?</legend>
+              <label><input type="radio" name="reason" value="no_right_moment"> I didn’t find the right moment</label>
+              <label><input type="radio" name="reason" value="felt_nervous"> I felt too nervous</label>
+              <label><input type="radio" name="reason" value="family_busy"> My family wasn’t available</label>
+              <label><input type="radio" name="reason" value="felt_unsafe"> It didn’t feel safe</label>
+              <label><input type="radio" name="reason" value="changed_mind"> I changed my mind</label>
+              <label><input type="radio" name="reason" value="other"> Something else</label>
+            </fieldset>
+            <label for="follow-up-date">When might you try again? <span class="optional">Optional</span></label>
+            <input type="date" id="follow-up-date" name="next_try">
+            <label for="follow-up-note">Anything you want to remember? <span class="optional">Optional</span></label>
+            <textarea id="follow-up-note" name="note" rows="2" maxlength="500"></textarea>
+            <div class="actions"><button type="submit" class="button secondary">Save</button></div>
+          </form>
+          <div id="follow-up-advice" class="follow-up-advice" role="status" hidden></div>
+        </details>
+        <div class="stage-navigation"><button type="button" class="button secondary" id="back-prepare">← Back to preparation</button><button type="button" class="button primary" id="go-reflect">Next: Self-evaluation →</button></div></section>
       <section id="reflect-stage" class="stage-panel" aria-label="Reflect" hidden><form class="panel" id="evaluation-form"><div class="section-heading"><div><p class="eyebrow">After the conversation</p><h2>How did it go for you?</h2></div><span class="pill">In your own words</span></div><p class="help">Your assessment is what counts. You can save a draft and return later.</p><div id="evaluation-goals"></div><label for="reflection">What went differently from what you expected? <span class="optional">Optional</span></label><div id="expectations-context" class="expectations-context"></div><textarea id="reflection" aria-describedby="expectations-context" rows="4" placeholder="Anything that surprised you, or that you would approach differently…"></textarea><div class="actions"><button class="button secondary" type="submit" name="state" value="draft">Save draft</button><button class="button primary" type="submit" name="state" value="completed">Complete reflection</button><span class="help" id="evaluation-status"></span></div></form><section class="panel summary-panel"><div class="section-heading"><div><p class="eyebrow">Optional</p><h2>Your conversation summary</h2></div><span class="pill">AI-assisted</span></div><p class="help" id="summary-sources">Uses your written evaluation and the saved audio, when available. These are sent to Google Gemini only when you generate a summary. Your ratings stay yours.</p><button class="button secondary" id="generate-summary">Generate summary</button><div id="summary-editor" hidden><p id="summary-outdated" class="notice" hidden>Your reflection or recording has changed. Generate a new summary to include the latest information.</p><p class="help" id="summary-used-sources"></p><label for="summary-text">AI summary · editable draft</label><textarea id="summary-text" rows="6"></textarea><button class="button secondary" id="save-summary">Save summary edits</button></div></section><div class="stage-navigation"><button type="button" class="button secondary" id="back-record">← Back to recording</button></div></section>
       <footer>Common Ground <span aria-hidden="true">·</span> Prepare with intention. Reflect on your terms.</footer>
     </main>
   </div>
+  <dialog id="account-dialog" class="account-dialog" aria-labelledby="account-title">
+    <div class="section-heading"><div><p class="eyebrow">Signed in as <span id="account-username"></span></p><h2 id="account-title">Your account</h2></div><button type="button" class="text-button" id="close-account">Close</button></div>
+    <div id="account-message" class="notice" role="status" aria-live="polite" hidden></div>
+    <form method="post" id="profile-form">
+      <h3>Profile</h3>
+      <label for="profile-name">Your name</label>
+      <input id="profile-name" name="name" autocomplete="name" required maxlength="60">
+      <label for="profile-pronouns">Your pronouns</label>
+      <input id="profile-pronouns" name="pronouns" list="pronoun-options" required maxlength="30">
+      <label for="profile-gender">Gender <span class="optional">optional</span></label>
+      <input id="profile-gender" name="gender" maxlength="30">
+      <div class="actions"><button type="submit" class="button secondary">Save profile</button></div>
+    </form>
+    <form method="post" id="password-form">
+      <h3>Change password</h3>
+      <input type="text" name="username" autocomplete="username" hidden>
+      <label for="current-password">Current password</label>
+      <input id="current-password" name="current_password" type="password" autocomplete="current-password" required maxlength="256">
+      <label for="new-password">New password</label>
+      <input id="new-password" name="new_password" type="password" autocomplete="new-password" required minlength="15" maxlength="256" aria-describedby="new-password-help">
+      <p class="help" id="new-password-help">At least 15 characters. Changing it signs you out on your other devices. <span class="password-count" data-for="new-password"></span></p>
+      <div class="actions"><button type="submit" class="button secondary">Change password</button></div>
+    </form>
+    <form method="post" id="recovery-form">
+      <h3>Recovery code</h3>
+      <p class="help">Lost your recovery code? Make a new one; the old one stops working.</p>
+      <label for="recovery-password">Current password</label>
+      <input id="recovery-password" name="password" type="password" autocomplete="current-password" required maxlength="256">
+      <div class="actions"><button type="submit" class="button secondary">Make a new recovery code</button></div>
+      <p class="recovery-code" id="new-recovery-code" hidden></p>
+    </form>
+    <section class="voice-section" id="team-section" hidden>
+      <h3>Team access <span class="optional">admin</span></h3>
+      <p class="help">Choose who at Umeed for Women can see anonymous insights, and who else can manage this. They need an account first.</p>
+      <ul class="team-list" id="team-list"></ul>
+      <form method="post" id="team-form" class="team-form">
+        <label for="team-username">Username</label>
+        <input id="team-username" autocomplete="off" autocapitalize="none" spellcheck="false" required>
+        <label for="team-role">Access</label>
+        <select id="team-role"><option value="insight_viewer">Can see anonymous insights</option><option value="admin">Admin: can manage team access</option></select>
+        <div class="actions"><button type="submit" class="button secondary">Give access</button></div>
+      </form>
+      <p class="help" id="team-status" role="status"></p>
+    </section>
+    <section class="voice-section" id="insights-section">
+      <h3>Help Umeed for Women <span class="optional">optional</span></h3>
+      <p class="help">Share anonymous counts with the NGO so they can improve their support: how many conversations were prepared and held, what got in the way, how goals went and how prompts were used. Never your name, your words, your plans, your reflections or your recordings, and nothing at all until at least five people share. You can stop at any time.</p>
+      <label class="share-check"><input type="checkbox" id="share-insights"> Share anonymous insights</label>
+      <p class="help" id="insights-status" role="status"></p>
+    </section>
+    <section id="voice-section" class="voice-section" hidden>
+      <h3>Voice matching <span class="optional">experimental</span></h3>
+      <label class="share-check"><input type="checkbox" id="voice-opt-in"> Try voice matching</label>
+      <p class="help">Lets prompts tell your voice from your family’s. Read the sentence below aloud in a quiet place. Only a voice fingerprint is kept on this server, never the recording, and you can delete it at any time. It’s experimental: when voices sound alike, prompts simply don’t use it.</p>
+      <p class="voice-sentence">“I’m getting ready for an important conversation with my family, and I want to say clearly what matters to me.”</p>
+      <p class="help" id="voice-status" role="status"></p>
+      <div class="actions"><button type="button" class="button secondary" id="voice-record">Record voice sample</button><button type="button" class="text-button danger" id="voice-delete" hidden>Delete voice sample</button></div>
+    </section>
+    <div class="actions"><button type="button" class="button secondary" id="sign-out">Sign out</button></div>
+    <details class="danger-zone">
+      <summary>Delete account</summary>
+      <form method="post" id="delete-account-form">
+        <p class="help">Deletes your account and every conversation, recording, prompt and reflection in it. This can’t be undone.</p>
+        <label for="delete-password">Current password</label>
+        <input id="delete-password" name="password" type="password" autocomplete="current-password" required maxlength="256">
+        <div class="actions"><button type="submit" class="button danger-button">Delete my account</button></div>
+      </form>
+    </details>
+  </dialog>
+  <datalist id="pronoun-options"><option value="she/her"><option value="he/him"><option value="they/them"></datalist>
+<dialog id="insights-dialog" class="account-dialog insights-dialog" aria-labelledby="insights-title"><form method="dialog" class="dialog-close"><button class="text-button">Close</button></form><h2 id="insights-title">Anonymous insights</h2><p class="help">Counts from participants who chose to share. Small numbers are shown as “fewer than 3”, so no one can be singled out. No names, words, plans, reflections or recordings are ever included.</p><div id="insights-body"></div></dialog>
 </body>
 </html>

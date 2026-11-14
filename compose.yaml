@@ -1,0 +1,22 @@
+# docker compose up --build    then open http://localhost:5001
+# Put GEMINI_API_KEY in .env (copy .env.example). Without it the app runs with AI features switched off.
+services:
+  app:
+    build: .
+    image: common-ground:latest
+    ports:
+      # Only this computer by default; phones need HTTPS anyway (see compose.https.yaml).
+      - "127.0.0.1:${PORT:-5001}:5001"
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      SECURE_COOKIES: ${SECURE_COOKIES:-}  # 1 when served over HTTPS
+      VOICE_MATCHING: ${VOICE_MATCHING:-}  # 0 to stop offering experimental voice matching
+      LIVE_PROMPTS: ${LIVE_PROMPTS:-}  # 0 to stop offering instant prompts (Gemini Live)
+      INSIGHT_VIEWERS: ${INSIGHT_VIEWERS:-}  # usernames of NGO staff who may see anonymous insights
+    volumes:
+      - common-ground-data:/data
+    restart: unless-stopped
+
+volumes:
+  # Conversations and recordings. `docker compose down` keeps them; `down -v` deletes them.
+  common-ground-data:

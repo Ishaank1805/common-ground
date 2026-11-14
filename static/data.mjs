@@ -1,6 +1,24 @@
+/** One box per person. Space, comma or semicolon separates names, including "mother father". */
+export function splitPeople(value) {
+  const source = Array.isArray(value) ? value : [value ?? ''];
+  return source.flatMap(item => String(item).split(/[,;\s]+/)).map(part => part.trim()).filter(Boolean);
+}
+
+/**
+ * Boxes to show while a person field is being typed.
+ * A trailing space or comma opens the next empty box: "mother " → ["mother", ""].
+ */
+export function peopleBoxes(raw, commit = false) {
+  const text = String(raw ?? '');
+  const names = splitPeople(text);
+  const opensNext = commit || /[\s,;]$/.test(text);
+  if (!names.length) return [''];
+  return opensNext ? [...names, ''] : names;
+}
+
 export function preparationFromFields(audience, topic, goals, positives, barriers) {
   const preparation = {
-    audience: audience.split(',').map(value => value.trim()).filter(Boolean),
+    audience: splitPeople(audience),
     topic: topic.trim(),
     goals: goals.map(goal => ({id: goal.id, description: goal.description.trim()})).filter(goal => goal.description),
     expectations: {

@@ -61,6 +61,12 @@ export class ConversationRecorder {
     }
   }
 
+  // The conversation so far as one playable file: MediaRecorder chunks from the start concatenate cleanly.
+  snapshot() {
+    if (!this.chunks?.length) return null;
+    return new Blob(this.chunks, {type: this.recorder?.mimeType || this.chunks[0]?.type || 'audio/webm'});
+  }
+
   stop() {
     if (this.state !== 'recording') return;
     this.endedAt = new Date().toISOString();

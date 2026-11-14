@@ -1,0 +1,17 @@
+.git
+.venv
+__pycache__/
+*.py[cod]
+data/
+.env
+.env.*
+.certs/
+tests/
+interface/
+*.pdf
+.DS_Store
+.local-archive/
+member-handoffs/
+plan.md
+models/
+scripts/

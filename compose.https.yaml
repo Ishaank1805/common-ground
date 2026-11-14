@@ -1,0 +1,13 @@
+# HTTPS for phones on your network (browsers only allow the microphone over HTTPS or on localhost):
+#   docker compose -f compose.yaml -f compose.https.yaml up --build
+# First put a certificate the phone trusts in ./.certs/cert.pem and ./.certs/key.pem (for example made with
+# mkcert for this computer's LAN address). The container user must be able to read them: chmod 644 .certs/*.pem
+services:
+  app:
+    ports: !override
+      - "0.0.0.0:${PORT:-5001}:5001"
+    environment:
+      GUNICORN_CMD_ARGS: "--certfile /certs/cert.pem --keyfile /certs/key.pem"
+      SECURE_COOKIES: "1"  # Secure, __Host- session cookies over HTTPS
+    volumes:
+      - ./.certs:/certs:ro
