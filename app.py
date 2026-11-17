@@ -263,7 +263,8 @@ def create_app(test_config=None):
 
     @app.get("/api/config")
     def config():
-        return jsonify(model=gemini.MODEL, voice_matching=voice.enabled(), live_prompts=live.enabled(),
+        return jsonify(model=gemini.MODEL, fallback_model=gemini.FALLBACK_MODEL,
+                       voice_matching=voice.enabled(), live_prompts=live.enabled(),
                        model_configured=bool(os.environ.get("GEMINI_API_KEY")))
 
     @app.get("/api/sessions")

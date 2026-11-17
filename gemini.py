@@ -7,9 +7,11 @@ import re
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-MODEL = "gemini-3.5-flash-lite"
+MODEL = os.environ.get("GEMINI_MODEL", "").strip() or "gemini-3.5-flash-lite"
+FALLBACK_MODEL = os.environ.get("GEMINI_FALLBACK_MODEL", "").strip() or "gemini-3.1-flash-lite"
 MAX_AUDIO_BYTES = 12 * 1024 * 1024
 ENDPOINT = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
+FALLBACK_ENDPOINT = f"https://generativelanguage.googleapis.com/v1beta/models/{FALLBACK_MODEL}:generateContent"
 FIELDS = [f"preparation.{name}" for name in ("audience", "topic", "goals", "expectations")]
 # Quiet prompts during a recorded conversation (see FACILITATOR_PROMPT).
 PROMPT_KINDS = ("next_point", "respond_to_concern", "return_to_goal", "pause", "close", "step_away")
@@ -396,42 +398,54 @@ def _generate(prompt, data, schema, audio=None, mime_type="audio/m4a", timeout=6
     # ponytail: inline requests only; use Google's Files API for longer recordings.
     if len(encoded) > 19_000_000:
         raise GeminiError("The audio and evaluation exceed the summary request limit. Your saved data is unchanged.")
-    request = Request(ENDPOINT, data=encoded, method="POST",
-                      headers={"Content-Type": "application/json", "x-goog-api-key": key})
-    try:
-        with urlopen(request, timeout=timeout) as response:
-            raw = response.read(1_000_001)
-        if len(raw) > 1_000_000:
-            raise GeminiError("Gemini returned an oversized response. Please try again.")
-        envelope = json.loads(raw)
-    except HTTPError as error:
-        message = {400: "Gemini rejected the request. Check the server model configuration.",
-                   401: "Gemini rejected the API key. Check GEMINI_API_KEY on the server.",
-                   403: "Gemini access was denied. Check the server API key and model access.",
-                   404: "The configured Gemini model is unavailable for this API key.",
-                   429: "Gemini's quota or rate limit was reached. Please try again later."}
-        # Google explains invalid fields, unavailable models and key restrictions here.
-        # Keep only its message, never the request headers, URL or full error body.
-        detail = ""
+    endpoints = [ENDPOINT]
+    if FALLBACK_MODEL and FALLBACK_MODEL != MODEL:
+        endpoints.append(FALLBACK_ENDPOINT)
+    envelope = None
+    for idx, current_endpoint in enumerate(endpoints):
+        request = Request(current_endpoint, data=encoded, method="POST",
+                          headers={"Content-Type": "application/json", "x-goog-api-key": key})
         try:
-            payload = json.loads(error.read(16384))
-            detail = payload.get("error", {}).get("message", "")
-            if not isinstance(detail, str):
-                detail = ""
-        except (ValueError, AttributeError, OSError):
-            pass
-        detail = detail.replace(key, "[redacted]")
-        detail = re.sub(r"AIza[A-Za-z0-9_-]+", "[redacted]", detail)
-        detail = re.sub(r"(?i)((?:[?&]key=|x-goog-api-key\s*[:=]\s*|bearer\s+))[^\s\"'&]+", r"\1[redacted]", detail)
-        detail = " ".join(detail.split())[:1200]
-        explanation = message.get(error.code, "Gemini is unavailable. Please try again.")
-        if detail:
-            explanation += f" Google API ({error.code}): {detail}"
-        raise GeminiError(explanation) from None
-    except (URLError, OSError, TimeoutError):
-        raise GeminiError("Could not reach Gemini in time. Your saved data is unchanged; try again.") from None
-    except (ValueError, UnicodeError):
-        raise GeminiError("Gemini returned an unreadable response. Please try again.") from None
+            with urlopen(request, timeout=timeout) as response:
+                raw = response.read(1_000_001)
+            if len(raw) > 1_000_000:
+                raise GeminiError("Gemini returned an oversized response. Please try again.")
+            envelope = json.loads(raw)
+            break
+        except HTTPError as error:
+            if idx + 1 < len(endpoints) and error.code in (404, 429, 500, 502, 503, 504):
+                continue
+            message = {400: "Gemini rejected the request. Check the server model configuration.",
+                       401: "Gemini rejected the API key. Check GEMINI_API_KEY on the server.",
+                       403: "Gemini access was denied. Check the server API key and model access.",
+                       404: "The configured Gemini model is unavailable for this API key.",
+                       429: "Gemini's quota or rate limit was reached. Please try again later."}
+            # Google explains invalid fields, unavailable models and key restrictions here.
+            # Keep only its message, never the request headers, URL or full error body.
+            detail = ""
+            try:
+                payload = json.loads(error.read(16384))
+                detail = payload.get("error", {}).get("message", "")
+                if not isinstance(detail, str):
+                    detail = ""
+            except (ValueError, AttributeError, OSError):
+                pass
+            detail = detail.replace(key, "[redacted]")
+            detail = re.sub(r"AIza[A-Za-z0-9_-]+", "[redacted]", detail)
+            detail = re.sub(r"(?i)((?:[?&]key=|x-goog-api-key\s*[:=]\s*|bearer\s+))[^\s\"'&]+", r"\1[redacted]", detail)
+            detail = " ".join(detail.split())[:1200]
+            explanation = message.get(error.code, "Gemini is unavailable. Please try again.")
+            if detail:
+                explanation += f" Google API ({error.code}): {detail}"
+            raise GeminiError(explanation) from None
+        except (URLError, OSError, TimeoutError):
+            if idx + 1 < len(endpoints):
+                continue
+            raise GeminiError("Could not reach Gemini in time. Your saved data is unchanged; try again.") from None
+        except (ValueError, UnicodeError):
+            if idx + 1 < len(endpoints):
+                continue
+            raise GeminiError("Gemini returned an unreadable response. Please try again.") from None
     try:
         if envelope.get("promptFeedback", {}).get("blockReason"):
             raise GeminiError("Gemini could not generate a response for this request.")

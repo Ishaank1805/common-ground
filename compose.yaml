@@ -9,6 +9,7 @@ services:
       - "127.0.0.1:${PORT:-5001}:5001"
     environment:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_FALLBACK_MODEL: ${GEMINI_FALLBACK_MODEL:-}
       SECURE_COOKIES: ${SECURE_COOKIES:-}  # 1 when served over HTTPS
       VOICE_MATCHING: ${VOICE_MATCHING:-}  # 0 to stop offering experimental voice matching
       LIVE_PROMPTS: ${LIVE_PROMPTS:-}  # 0 to stop offering instant prompts (Gemini Live)

@@ -137,6 +137,17 @@ class GeminiTests(unittest.TestCase):
                 self.assertNotIn("test-secret", str(caught.exception))
 
     @patch("gemini.urlopen")
+    def test_fallback_model_on_rate_limit_or_unavailable(self, transport):
+        transport.side_effect = [
+            HTTPError(gemini.ENDPOINT, 429, "Rate limit", None, io.BytesIO(b'{"error":{"message":"quota"}}')),
+            api_response(READY)
+        ]
+        self.assertEqual(gemini.generate_plan(INPUT, []), READY)
+        self.assertEqual(transport.call_count, 2)
+        second_request = transport.call_args_list[1].args[0]
+        self.assertIn("gemini-3.1-flash-lite:generateContent", second_request.full_url)
+
+    @patch("gemini.urlopen")
     def test_provider_rejection_explains_reason_without_credentials(self, transport):
         detail = 'Invalid JSON payload: unknown field responseFormat. key=test-secret https://example.test/?key=other-secret x-goog-api-key: another-secret Bearer token-secret AIzaExampleSecret'
         transport.side_effect = HTTPError(gemini.ENDPOINT, 400, "Bad Request", None,
