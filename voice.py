@@ -9,7 +9,10 @@ If the libraries (torch, speechbrain, silero-vad) are not installed, available()
 the rest of the app works exactly as before.
 """
 from concurrent.futures import ThreadPoolExecutor
+import collections
+import logging
 import os
+import queue
 from pathlib import Path
 import threading
 import wave
@@ -227,3 +230,163 @@ def timeline(samples, sample_embedding, last_seconds=None):
     if len(segments) > MAX_SEGMENTS:  # Keep the latest part.
         segments = segments[-MAX_SEGMENTS:]
     return {"segments": segments, "seconds": seconds}
+
+
+LOG = logging.getLogger("voice")
+LONE_HER = 0.60  # With no other voice to compare against yet, "You" needs a clearly strong match.
+MERGE_SIMILARITY = 0.62  # Two groups this alike are the same person, split early on.
+MAX_LIVE_VOICES = 6
+
+
+class LiveSpeakers:
+    """Who is speaking as a conversation streams in, for the live transcript on her screen. Nothing is saved.
+
+    Every second, the last two seconds of audio (if mostly speech) get an ECAPA fingerprint and join the most similar
+    group of voices, or start a new one. The group that matches her voice sample clearly better than every other
+    group (MARGIN) is "You"; while it is the only group, it needs LONE_HER. Other groups heard at least twice are
+    "Person 1", "Person 2", ... in the order they first spoke; anything else is unnamed. Names can change as more
+    is heard (for example once a second voice appears), and the phone renames earlier lines to match.
+    """
+    STEP_SECONDS, SPAN_SECONDS, KEEP_SECONDS, MIN_SPEECH_SECONDS = 1.0, 3.0, 30.0, 1.0
+
+    def __init__(self, her_embedding=None):
+        import numpy as np
+        self.her = None
+        if her_embedding:
+            her = np.asarray(her_embedding, dtype="float32")
+            self.her = her / (np.linalg.norm(her) or 1.0)
+        self.samples, self.origin, self.received = np.zeros(0, dtype="float32"), 0.0, 0.0
+        self.next_step = self.SPAN_SECONDS
+        self.voices, self.aliases, self.names = [], {}, {}
+        self.turns = collections.deque(maxlen=900)  # (start, end, voice id), in seconds of streamed audio
+        self.lock, self.inbox, self.thread, self.changed = threading.Lock(), queue.Queue(), None, False
+        self.processed, self.speech_seconds, self.reported_speech, self.failed = 0.0, 0.0, 0.0, False
+        self.has_sample = self.her is not None
+
+    def start(self):
+        self.thread = threading.Thread(target=self._work, name="live-speakers", daemon=True)
+        self.thread.start()
+
+    def add(self, pcm):
+        self.inbox.put(pcm)
+
+    def close(self):
+        self.inbox.put(None)
+
+    def _work(self):
+        try:
+            _load()  # Load the fingerprint model now, so the first seconds of speech are not held up.
+        except Exception:
+            pass
+        while True:
+            pcm = self.inbox.get()
+            if pcm is None:
+                return
+            try:
+                self._absorb(pcm)
+            except Exception as error:  # Labels are a bonus: the transcript carries on without them.
+                if not self.failed:
+                    self.failed = True
+                    LOG.warning("Live speaker labels stopped working: %s", error)
+                with self.lock:
+                    self.processed = self.received
+
+    def _absorb(self, pcm):
+        import numpy as np
+        chunk = samples_from_pcm(pcm)
+        self.samples = np.concatenate([self.samples, chunk])
+        self.received += len(chunk) / RATE
+        excess = len(self.samples) - int(self.KEEP_SECONDS * RATE)
+        if excess > 0:
+            self.samples, self.origin = self.samples[excess:], self.origin + excess / RATE
+        while self.received >= self.next_step:
+            end = self.next_step
+            begin = end - self.SPAN_SECONDS
+            self.next_step += self.STEP_SECONDS
+            window = self.samples[max(0, int((begin - self.origin) * RATE)):int((end - self.origin) * RATE)]
+            # Fingerprint only the speech in the last few seconds: pauses are normal in conversation.
+            voiced = [window[int(start * RATE):int(stop * RATE)] for start, stop in speech_segments(window)]
+            voiced = np.concatenate(voiced) if voiced else window[:0]
+            if len(voiced) < self.MIN_SPEECH_SECONDS * RATE:
+                continue
+            voice_id = self._group(_embed([voiced])[0], begin)
+            with self.lock:
+                self.turns.append((begin, end, voice_id))
+                self.speech_seconds += len(voiced) / RATE / (self.SPAN_SECONDS / self.STEP_SECONDS)
+                self._name()
+        with self.lock:
+            self.processed = self.received
+
+    @staticmethod
+    def _unit(vector):
+        import numpy as np
+        return vector / (np.linalg.norm(vector) or 1.0)
+
+    def _group(self, vector, moment):
+        best, similarity = None, -1.0
+        for voice in self.voices:
+            score = float(self._unit(voice["sum"]) @ vector)
+            if score > similarity:
+                best, similarity = voice, score
+        if best is None or (similarity < GROUP_SIMILARITY and len(self.voices) < MAX_LIVE_VOICES):
+            best = {"id": f"v{len(self.voices) + len(self.aliases) + 1}", "sum": vector * 0, "count": 0, "first": moment}
+            self.voices.append(best)
+        best["sum"] = best["sum"] + vector
+        best["count"] += 1
+        return best["id"]
+
+    def _resolve(self, voice_id):
+        while voice_id in self.aliases:
+            voice_id = self.aliases[voice_id]
+        return voice_id
+
+    def _name(self):
+        merged = True
+        while merged:  # Groups that turn out to be one person become one.
+            merged = False
+            for index, first in enumerate(self.voices):
+                for second in self.voices[index + 1:]:
+                    if float(self._unit(first["sum"]) @ self._unit(second["sum"])) >= MERGE_SIMILARITY:
+                        first["sum"], first["count"] = first["sum"] + second["sum"], first["count"] + second["count"]
+                        first["first"] = min(first["first"], second["first"])
+                        self.aliases[second["id"]] = first["id"]
+                        self.voices.remove(second)
+                        merged = True
+                        break
+                if merged:
+                    break
+        heard = [voice for voice in self.voices if voice["count"] >= 2]
+        you = None
+        if self.her is not None and heard:
+            ranked = sorted(((float(self._unit(voice["sum"]) @ self.her), voice["id"]) for voice in heard), reverse=True)
+            top, rival = ranked[0], (ranked[1][0] if len(ranked) > 1 else None)
+            if top[0] >= HER and ((rival is None and top[0] >= LONE_HER) or (rival is not None and top[0] - rival >= MARGIN)):
+                you = top[1]
+        names, number = {}, 0
+        for voice in sorted(self.voices, key=lambda item: item["first"]):
+            if voice["id"] == you:
+                names[voice["id"]] = "You"
+            elif voice["count"] >= 2:
+                number += 1
+                names[voice["id"]] = f"Person {number}"
+        for alias in self.aliases:  # Earlier lines may carry a merged group's old id.
+            if self._resolve(alias) in names:
+                names[alias] = names[self._resolve(alias)]
+        if names != self.names:
+            self.names, self.changed = names, True
+
+    def speaker_at(self, seconds, lookback=2.5):
+        """The voice heard most in the lookback seconds before `seconds` of streamed audio, or None."""
+        with self.lock:
+            counts = collections.Counter(self._resolve(voice) for start, end, voice in self.turns
+                                         if end > seconds - lookback and start < seconds)
+        return counts.most_common(1)[0][0] if counts else None
+
+    def take_names(self):
+        """Names (voice id -> You / Person N) and progress, when they changed or every few seconds of speech."""
+        with self.lock:
+            if not self.changed and self.speech_seconds - self.reported_speech < 3:
+                return None
+            self.changed, self.reported_speech = False, self.speech_seconds
+            return {"names": dict(self.names), "voices": len(set(self.names.values())),
+                    "speech_seconds": round(self.speech_seconds), "has_sample": self.has_sample}

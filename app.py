@@ -822,7 +822,25 @@ def create_app(test_config=None):
                                  (session_id, capture, datetime.now(timezone.utc).isoformat(), json.dumps(event)))
                 return {key: value for key, value in event.items() if key not in ("notes", "goal_evidence", "talk_seconds")}
 
-            live.serve(ws, live.Relay(session, language), on_check, on_call)
+            # Who is speaking, for her screen only: "You" needs her registered voice sample.
+            her = g.user.get("voice_embedding") if g.user.get("voice_opt_in") else None
+            speakers = voice.LiveSpeakers(her) if voice.enabled() else None
+            live.serve(ws, live.Relay(session, language), on_check, on_call, speakers=speakers)
+
+    @app.post("/api/sessions/<session_id>/slides")
+    def make_slides(session_id):
+        """NGO slides about this conversation, written by Gemini from her data, checked, and kept with it."""
+        body()
+        session = load(session_id)
+        if not session.get("chosen_plan"):
+            raise APIError("Save a conversation plan before making slides.")
+        capture = session["recording"]["started_at"] if session["recording"] else None
+        events = prompt_events(session_id, capture) if capture else []
+        made = model_call(gemini.generate_slides, session, events)
+        session["slides"] = {"slides": made["slides"], "created_at": datetime.now(timezone.utc).isoformat(),
+                             "source_revision": session["evaluation"]["revision"]}
+        save(session)
+        return response(session)
 
     @app.get("/api/sessions/<session_id>/facilitator")
     def facilitator_prompts(session_id):

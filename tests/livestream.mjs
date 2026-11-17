@@ -92,7 +92,7 @@ const tests = {
     FakeSocket.last.serverSays({type: 'sent', id: 1, check: 'CHECK {} Call assess_moment now.'});
     FakeSocket.last.serverSays({type: 'error', id: 1, message: 'No prompt this time.', reason: 'Cue must be text.'});
     await assert.rejects(answer, /No prompt/);
-    assert.deepEqual(seen, [['audio', 2], ['heard', {text: 'The fees', finished: false}],
+    assert.deepEqual(seen, [['audio', 2], ['heard', {text: 'The fees', finished: false, speaker: null}],
       ['sent', {id: 1, check: 'CHECK {} Call assess_moment now.'}], ['rejected', {id: 1, reason: 'Cue must be text.'}]]);
   },
   async 'the instructions and every raw answer reach the live view'() {

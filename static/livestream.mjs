@@ -23,9 +23,9 @@ function parse(data) {
 
 export class LiveStream {
   constructor({url, WebSocketClass = globalThis.WebSocket, onCue = () => {}, onClose = () => {},
-    onHeard = () => {}, onAudioConfirmed = () => {}, onSent = () => {}, onRejected = () => {}, onSetup = () => {}, onAnswered = () => {},
+    onHeard = () => {}, onAudioConfirmed = () => {}, onSent = () => {}, onRejected = () => {}, onSetup = () => {}, onAnswered = () => {}, onSpeakers = () => {},
     openTimeoutMs = 15000, checkTimeoutMs = 25000, timers = globalThis}) {
-    Object.assign(this, {url, WebSocketClass, onCue, onClose, onHeard, onAudioConfirmed, onSent, onRejected, onSetup, onAnswered,
+    Object.assign(this, {url, WebSocketClass, onCue, onClose, onHeard, onAudioConfirmed, onSent, onRejected, onSetup, onAnswered, onSpeakers,
       openTimeoutMs, checkTimeoutMs, timers});
     this.ready = false;
     this.closed = false;
@@ -71,8 +71,11 @@ export class LiveStream {
           this.onSetup(String(message.instruction || ''));
         } else if (message.type === 'answered') {
           this.onAnswered({id: message.id, raw: message.raw, shown: message.shown || null, reason: message.reason || ''});
+        } else if (message.type === 'speakers') {
+          this.onSpeakers(message.names && typeof message.names === 'object' ? message.names : {},
+            {voices: Number(message.voices) || 0, speechSeconds: Number(message.speech_seconds) || 0, hasSample: Boolean(message.has_sample)});
         } else if (message.type === 'heard') {
-          this.onHeard({text: String(message.text || ''), finished: Boolean(message.finished)});
+          this.onHeard({text: String(message.text || ''), finished: Boolean(message.finished), speaker: message.speaker ?? null});
         } else if (message.type === 'audio') {
           this.onAudioConfirmed(Number(message.seconds) || 0);
         } else if (message.type === 'sent') {

@@ -24,6 +24,7 @@ MAX_AUDIO_FRAME = 64 * 1024  # bytes of 16-bit PCM per WebSocket message (about 
 CHECK_TIMEOUT_SECONDS = 20
 MAX_RECONNECT_FAILURES = 3
 NO_PROMPT = "No prompt this time. Your recording continues."
+HEARD_WAIT_SECONDS = 4.0  # longest a transcript piece waits for its speaker
 LOG = logging.getLogger("live")
 TRANSCRIBE = os.environ.get("LIVE_TRANSCRIPT", "1").strip().lower() not in ("0", "false", "no", "off")
 
@@ -280,7 +281,7 @@ class Relay:
                 return  # The connection has ended.
 
 
-def serve(ws, relay, on_check, on_call, clock=time.monotonic, receive_timeout=0.05):
+def serve(ws, relay, on_check, on_call, clock=time.monotonic, receive_timeout=0.05, speakers=None):
     """Run one instant-prompt connection on the request thread until either side ends it.
 
     on_check(requested, elapsed_seconds) returns the CHECK text; on_call(args, requested, elapsed_seconds, mode, unprompted)
@@ -290,8 +291,11 @@ def serve(ws, relay, on_check, on_call, clock=time.monotonic, receive_timeout=0.
     from simple_websocket import ConnectionClosed
     pending = {}  # check id -> (requested, elapsed_seconds, mode, sent at)
     mode, streamed_bytes, next_report = "on_request", 0, 2 * PCM_RATE
+    waiting = []  # transcript pieces waiting for their speaker: (piece, seconds of audio, queued at)
     try:
         relay.start()
+        if speakers is not None:
+            speakers.start()
         while True:
             for kind, payload in relay.drain():
                 if kind == "ready":
@@ -299,7 +303,8 @@ def serve(ws, relay, on_check, on_call, clock=time.monotonic, receive_timeout=0.
                     if getattr(relay, "instruction", ""):  # The instructions, once, for the live view.
                         ws.send(json.dumps({"type": "setup", "instruction": relay.instruction}))
                 elif kind == "heard":
-                    ws.send(json.dumps({"type": "heard", **payload}))
+                    # Each piece waits (briefly) until its voice has been worked out, then goes with who said it.
+                    waiting.append((payload, streamed_bytes / (2 * PCM_RATE) - 0.3, clock()))
                 elif kind == "stopped":
                     ws.send(json.dumps({"type": "stopped", "message": payload}))
                     return
@@ -325,6 +330,12 @@ def serve(ws, relay, on_check, on_call, clock=time.monotonic, receive_timeout=0.
                         ws.send(json.dumps({"type": "answered", "id": check_id, "raw": payload["args"],
                                             "shown": (guidance or {}).get("prompt"), "reason": reason}))
                     relay.answer(payload["id"], payload["name"])
+            while waiting and (speakers is None or speakers.processed >= waiting[0][1] or clock() - waiting[0][2] > HEARD_WAIT_SECONDS):
+                piece, at, _ = waiting.pop(0)
+                ws.send(json.dumps({"type": "heard", **piece, "speaker": speakers.speaker_at(at) if speakers is not None else None}))
+            progress = speakers.take_names() if speakers is not None else None
+            if progress is not None:  # Who is You and who is Person 1, 2...; earlier lines are renamed to match.
+                ws.send(json.dumps({"type": "speakers", **progress}))
             now = clock()
             for check_id in [key for key, value in pending.items() if now - value[3] > CHECK_TIMEOUT_SECONDS]:
                 pending.pop(check_id)
@@ -338,6 +349,8 @@ def serve(ws, relay, on_check, on_call, clock=time.monotonic, receive_timeout=0.
                 if 0 < len(message) <= MAX_AUDIO_FRAME and len(message) % 2 == 0:
                     streamed_bytes += len(message)
                     relay.audio(bytes(message))
+                    if speakers is not None:
+                        speakers.add(bytes(message))
                     if streamed_bytes >= next_report:  # About once a second, confirm that her audio is arriving.
                         ws.send(json.dumps({"type": "audio", "seconds": round(streamed_bytes / (2 * PCM_RATE), 1)}))
                         next_report += 2 * PCM_RATE
@@ -362,3 +375,5 @@ def serve(ws, relay, on_check, on_call, clock=time.monotonic, receive_timeout=0.
         return
     finally:
         relay.close()
+        if speakers is not None:
+            speakers.close()

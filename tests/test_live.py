@@ -308,7 +308,7 @@ class ServeTests(unittest.TestCase):
             lambda relay: relay.queue.append(("heard", {"text": "The fees are too high.", "finished": True})),
             None,
         ], on_call=lambda args: {})
-        self.assertIn({"type": "heard", "text": "The fees are too high.", "finished": True}, ws.sent)
+        self.assertIn({"type": "heard", "text": "The fees are too high.", "finished": True, "speaker": None}, ws.sent)
         self.assertEqual(calls, [])  # Nothing is validated or saved for a transcript.
 
     def test_every_answer_shows_what_went_in_and_what_came_back(self):
@@ -321,6 +321,37 @@ class ServeTests(unittest.TestCase):
         self.assertIn({"type": "setup", "instruction": "LIVE INSTRUCTIONS"}, ws.sent)
         self.assertIn({"type": "sent", "id": 7, "check": "CHECK True 5.0"}, ws.sent)
         self.assertIn({"type": "answered", "id": 7, "raw": CALL_ARGS, "shown": guidance["prompt"], "reason": None}, ws.sent)
+
+    def test_each_transcript_piece_says_who_spoke(self):
+        class FakeSpeakers:
+            processed = 0.0
+            def __init__(self):
+                self.frames, self.progress, self.closed = [], {"names": {"v1": "You", "v2": "Person 1"}, "voices": 2}, False
+            def start(self):
+                pass
+            def add(self, pcm):
+                self.frames.append(pcm)
+            def close(self):
+                self.closed = True
+            def speaker_at(self, seconds, lookback=2.5):
+                return "v2" if seconds > 1 else "v1"
+            def take_names(self):
+                progress, self.progress = self.progress, None
+                return progress
+        speakers = FakeSpeakers()
+        relay = FakeRelay()
+
+        def processed():
+            speakers.processed = 10.0  # Its voice has been worked out: now the piece can go.
+        script = [b"\x01\x00" * 32000, lambda: relay.queue.append(("heard", {"text": "The fees", "finished": False})), None, None,
+                  processed, None]
+        ws = FakeSocket(script)
+        live.serve(ws, relay, on_check=lambda r, e: "CHECK", on_call=lambda *a, **k: {}, receive_timeout=0, speakers=speakers)
+        self.assertIn({"type": "speakers", "names": {"v1": "You", "v2": "Person 1"}, "voices": 2}, ws.sent)
+        heard = [m for m in ws.sent if m["type"] == "heard"]
+        self.assertEqual(heard, [{"type": "heard", "text": "The fees", "finished": False, "speaker": "v2"}])
+        self.assertLess(ws.sent.index(heard[0]), len(ws.sent))  # sent only after its speaker was known
+        self.assertEqual((len(speakers.frames), speakers.closed), (1, True))
 
     def test_invalid_judgements_and_slow_checks_end_quietly(self):
         now = [100.0]

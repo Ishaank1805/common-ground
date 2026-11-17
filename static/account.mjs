@@ -2,7 +2,7 @@
 // account settings dialog. The server enforces every rule; the page only guides. Forms are plain
 // HTML forms with autocomplete hints, so password managers and pasting work.
 const $ = selector => document.querySelector(selector);
-const VIEWS = {signin: 'signin-form', register: 'register-form', recover: 'recover-form', code: 'recovery-code-view'};
+const VIEWS = {signin: 'signin-form', register: 'register-form', recover: 'recover-form', code: 'recovery-code-view', voice: 'voice-register-view'};
 
 async function call(path, method = 'GET', data) {
   const options = {method};
@@ -177,6 +177,51 @@ export class Account {
     } finally { $('#voice-record').disabled = false; }
   }
 
+  // At sign-up: read the sentence aloud; recording it is her choice to use voice matching. Only a fingerprint is kept.
+  async registerVoice() {
+    const button = $('#voice-register-record');
+    const status = $('#voice-register-status');
+    if (this.voiceRecorder) { this.voiceRecorder.stop(); return; }
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({audio: true}); }
+    catch { status.textContent = 'Allow microphone access to record, or skip for now.'; return; }
+    const type = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus'].find(kind => globalThis.MediaRecorder?.isTypeSupported?.(kind)) || '';
+    const recorder = new MediaRecorder(stream, type ? {mimeType: type} : undefined);
+    const chunks = [];
+    recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
+    const stopped = new Promise(resolve => { recorder.onstop = resolve; });
+    this.voiceRecorder = recorder;
+    this.voiceCancelled = false;
+    recorder.start();
+    button.textContent = 'Stop';
+    status.textContent = 'Recording. Read the sentence aloud, then press Stop.';
+    const limit = setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 20000);
+    await stopped;
+    clearTimeout(limit);
+    stream.getTracks().forEach(track => track.stop());
+    this.voiceRecorder = null;
+    button.textContent = 'Record my voice';
+    if (this.voiceCancelled) return;
+    const blob = new Blob(chunks, {type: recorder.mimeType || type || 'audio/webm'});
+    button.disabled = true;
+    status.textContent = 'Saving…';
+    try {
+      const optIn = await fetch('/api/voice/opt-in', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({on: true})});
+      if (!optIn.ok) throw new Error('Voice registration isn’t available right now. You can skip and add it later in Account.');
+      const response = await fetch('/api/voice', {method: 'POST', headers: {'Content-Type': blob.type}, body: blob});
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'Your voice could not be saved. Please try again.');
+      status.textContent = `Saved, from ${result.speech_seconds} seconds of speech. The app will mark your voice as “You”.`;
+      const user = {...this.pendingUser, voice_sample: true, voice_matching: true};
+      this.pendingUser = null;
+      setTimeout(() => this.enter(user), 1200);
+    } catch (error) {
+      status.textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   async deleteVoice() {
     if (!window.confirm('Delete your voice sample? Prompts will stop telling your voice from others.')) return;
     const response = await fetch('/api/voice', {method: 'DELETE'}).catch(() => null);
@@ -268,11 +313,26 @@ export class Account {
         this.say('#auth-message', 'Copied. Paste it somewhere private, not in a shared chat.');
       } catch { this.say('#auth-message', 'Copying isn’t available here. Write the code down instead.', true); }
     });
-    $('#recovery-continue').addEventListener('click', () => {
+    $('#recovery-continue').addEventListener('click', async () => {
       const user = this.pending;
       this.pending = null;
       $('#recovery-code').textContent = '';
+      // Offer to register her voice now, if this server can tell voices apart.
+      const voice = await fetch('/api/voice').then(response => (response.ok ? response.json() : null)).catch(() => null);
+      if (voice?.available) {
+        this.pendingUser = user;
+        $('#voice-register-status').textContent = '';
+        this.show('voice');
+        return;
+      }
       this.enter(user);
+    });
+    $('#voice-register-record').addEventListener('click', () => this.registerVoice());
+    $('#voice-register-skip').addEventListener('click', () => {
+      if (this.voiceRecorder) { this.voiceCancelled = true; this.voiceRecorder.stop(); }
+      const user = this.pendingUser;
+      this.pendingUser = null;
+      if (user) this.enter(user);
     });
 
     $('#open-account').addEventListener('click', () => this.openSettings());

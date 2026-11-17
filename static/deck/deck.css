@@ -1,0 +1,92 @@
+/* The Umeed presentation inside the app (static/deck.mjs). The deck's own styles are scoped to .deck-stage so
+   they never touch the rest of the app; slides are a fixed 1920×1080 canvas, scaled to fit the screen. */
+.deck-stage {
+  --ink: #1f2a25;
+  --green: #24463b;
+  --paper: #f5f2ea;
+  --sage: #e4ebe2;
+  --terra: #a8553a;
+  --muted: #56635c;
+  --card: #fbf9f4;
+  --rule: #cfd8cf;
+  --on-dark: #f5f2ea;
+  --on-dark-soft: #e9c9b8;
+  width: 1920px;
+  height: 1080px;
+  flex: none;
+  transform-origin: center center;
+}
+.deck-stage section.slide { width: 1920px; height: 1080px; box-sizing: border-box; position: relative; overflow: hidden; background: var(--paper); color: var(--ink); padding: 128px; display: flex; flex-direction: column; gap: 40px; font-family: 'Inter', system-ui, sans-serif; text-align: left; }
+.deck-stage section.sage { background: var(--sage); }
+.deck-stage section.dark { background: var(--green); color: var(--on-dark); justify-content: center; }
+.deck-stage section.accent { background: var(--terra); color: #fbf6ef; justify-content: center; }
+.deck-stage section.with-footer { padding: 128px 128px 160px; }
+.deck-stage aside { display: none; }
+
+.deck-stage .eyebrow { font-size: 24px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--terra); margin: 0; }
+.deck-stage section.dark .eyebrow, .deck-stage section.accent .eyebrow { color: var(--on-dark-soft); }
+.deck-stage section.accent .eyebrow { color: #fbe3d6; }
+
+.deck-stage h1.title { font-family: 'Source Serif 4', Georgia, serif; font-size: 112px; line-height: 1.05; font-weight: 600; margin: 0; }
+.deck-stage h2.heading { font-family: 'Source Serif 4', Georgia, serif; font-size: 64px; line-height: 1.1; font-weight: 600; margin: 0; color: var(--green); }
+.deck-stage section.dark h2.heading, .deck-stage section.accent h2.heading { color: inherit; }
+
+.deck-stage .lead { font-size: 36px; line-height: 1.4; margin: 0; max-width: 1400px; }
+.deck-stage .byline { font-size: 28px; margin: 0; color: var(--on-dark-soft); }
+.deck-stage .big { font-family: 'Source Serif 4', Georgia, serif; font-size: 72px; line-height: 1.15; font-weight: 600; margin: 0; max-width: 1500px; }
+.deck-stage .note { font-size: 28px; line-height: 1.45; color: var(--muted); margin: 0; max-width: 1500px; }
+.deck-stage section.accent .note { color: #fbe3d6; }
+.deck-stage .footer { position: absolute; left: 128px; bottom: 64px; width: 1664px; font-size: 24px; color: var(--muted); margin: 0; }
+
+.deck-stage .cards { display: flex; gap: 32px; }
+.deck-stage .cards.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+.deck-stage .card { flex: 1; background: var(--card); border-radius: 20px; padding: 44px; display: flex; flex-direction: column; gap: 16px; animation: deck-rise 0.6s ease-out both; }
+.deck-stage .cards .card:nth-child(2) { animation-delay: 0.12s; }
+.deck-stage .cards .card:nth-child(3) { animation-delay: 0.24s; }
+.deck-stage .cards .card:nth-child(4) { animation-delay: 0.36s; }
+.deck-stage .card h3 { font-family: 'Source Serif 4', Georgia, serif; font-size: 40px; line-height: 1.15; margin: 0; color: var(--green); }
+.deck-stage .card .card-step { font-size: 24px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--terra); margin: 0; }
+.deck-stage .card .card-text { font-size: 28px; line-height: 1.45; margin: 0; color: var(--ink); }
+.deck-stage .card.highlight { background: var(--green); }
+.deck-stage .card.highlight h3, .deck-stage .card.highlight .card-text { color: var(--on-dark); }
+.deck-stage .card.highlight .card-step { color: var(--on-dark-soft); }
+
+.deck-stage table.results { border-collapse: collapse; width: 100%; font-size: 28px; }
+.deck-stage table.results th { text-align: left; font-size: 24px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); padding: 0 0 16px; border-bottom: 2px solid var(--green); }
+.deck-stage table.results td { padding: 18px 0; border-bottom: 1px solid var(--rule); }
+.deck-stage table.results td.value { font-weight: 600; color: var(--green); text-align: right; padding-left: 32px; white-space: nowrap; }
+.deck-stage table.results th.value { text-align: right; }
+
+.deck-stage ol.asks { font-size: 32px; line-height: 1.45; margin: 0; padding-left: 48px; }
+.deck-stage ol.asks li { margin-bottom: 20px; }
+
+@keyframes deck-rise { from { opacity: 0; transform: translateY(24px); } }
+
+/* The viewer: full screen, with the slide in the middle and the controls around it. */
+.deck-dialog { width: 100vw; height: 100vh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: #14211c; color: #f5f2ea; }
+.deck-dialog[open] { display: flex; flex-direction: column; }
+.deck-dialog::backdrop { background: #0b1411; }
+.deck-bar, .deck-controls { display: flex; align-items: center; gap: 10px; padding: 10px 16px; flex-wrap: wrap; }
+.deck-bar .deck-name { margin: 0; font-weight: 600; flex: 1; min-width: 0; }
+.deck-count { font-variant-numeric: tabular-nums; opacity: 0.85; }
+.deck-frame { flex: 1; min-height: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.deck-controls { justify-content: center; }
+.deck-controls select { max-width: min(60vw, 420px); }
+.deck-dialog .button.secondary { background: #f5f2ea; color: #1f2a25; }
+.deck-notes { max-height: 24vh; overflow-y: auto; margin: 0; padding: 12px 20px 18px; font-size: 15px; line-height: 1.55; background: #1d2f28; }
+.deck-error { padding: 24px; }
+.auth-deck { margin-top: 12px; }
+
+/* The same viewer in the full-window dialog, in full screen, or inside the conversation's NGO slides tab. */
+.deck-viewer { display: flex; flex-direction: column; height: 100%; min-height: 0; background: #14211c; color: #f5f2ea; }
+.deck-dialog .deck-viewer { flex: 1; }
+.deck-viewer:fullscreen { height: 100vh; }
+.deck-inline .deck-viewer { height: min(78vh, 760px); border-radius: 12px; overflow: hidden; margin-top: 18px; }
+.deck-inline .deck-notes { max-height: 30%; }
+
+/* Her own words can be long: wrap anywhere rather than spill off the slide. */
+.deck-stage .card-text, .deck-stage .lead, .deck-stage h1.title, .deck-stage .card h3, .deck-stage td { overflow-wrap: anywhere; }
+
+/* The NGO slides tab's own panel, above the slides Gemini made. */
+#slides-stage .slides-intro h2 { margin: 4px 0 8px; }
+.deck-stage section.quote .big, .deck-stage section.sage .big { max-width: 1600px; font-size: 60px; }

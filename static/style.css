@@ -197,3 +197,9 @@
 /* A cue is what she could say next; the hint above it says what the line does. */
 .prompt-card .prompt-hint { font-size: 14px; opacity: 0.8; margin: 2px 0 6px; }
 .prompt-card .prompt-line { font-size: 20px; line-height: 1.4; font-weight: 500; margin: 4px 0 0; }
+
+/* The live transcript, line by line, with who said it. */
+.live-monitor-transcript .said { margin: 0 0 4px; }
+.live-monitor-transcript .said-you b { color: #31594c; }
+.live-monitor-transcript .said-other b { color: #8a4b2d; }
+.live-monitor-transcript .said-unclear b { opacity: 0.65; }

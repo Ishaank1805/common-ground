@@ -6,10 +6,12 @@
   <meta name="theme-color" content="#31594c">
   <title>Common Ground · Conversation preparation</title>
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/deck/deck.css">
   <script type="module" src="/static/app.js"></script>
+  <script type="module" src="/static/deck.mjs"></script>
 </head>
 <body>
-  <header class="topbar"><a class="brand" href="/" aria-label="Common Ground home"><span class="brand-mark" aria-hidden="true">cg</span><span>Common Ground</span></a><div class="account-area" id="account-area" hidden><span class="profile" id="profile"></span><button type="button" class="text-button" id="open-insights" hidden>Insights</button><button type="button" class="text-button" id="open-account">Account</button></div></header>
+  <header class="topbar"><a class="brand" href="/" aria-label="Common Ground home"><span class="brand-mark" aria-hidden="true">cg</span><span>Common Ground</span></a><div class="account-area" id="account-area" hidden><span class="profile" id="profile"></span><button type="button" class="text-button" data-open-deck>Presentation for Umeed</button><button type="button" class="text-button" id="open-insights" hidden>Insights</button><button type="button" class="text-button" id="open-account">Account</button></div></header>
   <section id="auth-view" class="auth-view" aria-label="Your account" hidden>
     <div class="panel auth-card">
       <div id="auth-message" class="notice" role="status" aria-live="polite" hidden></div>
@@ -64,7 +66,16 @@
         <label class="checkbox"><input type="checkbox" id="recovery-saved"> I’ve saved my recovery code somewhere private.</label>
         <div class="actions"><button type="button" class="button primary" id="recovery-continue" disabled>Continue</button></div>
       </div>
+      <div id="voice-register-view" hidden>
+        <p class="eyebrow">Optional</p>
+        <h1>Register your voice</h1>
+        <p class="help">So the app can tell your voice from your family’s, read this sentence aloud in a quiet place, then press Stop. Only a voice fingerprint is kept on this server, never the recording, and you can delete it or record again in Account at any time.</p>
+        <p class="voice-sentence">“I’m getting ready for an important conversation with my family, and I want to say clearly what matters to me.”</p>
+        <p class="help" id="voice-register-status" role="status"></p>
+        <div class="actions"><button type="button" class="button primary" id="voice-register-record">Record my voice</button><button type="button" class="button secondary" id="voice-register-skip">Skip for now</button></div>
+      </div>
       <p class="help auth-privacy">On a shared phone, sign out when you’re done. You’re signed out automatically after 30 minutes without activity.</p>
+      <p class="help auth-deck"><button type="button" class="text-button" data-open-deck>See the presentation for Umeed for Women</button></p>
     </div>
   </section>
   <div class="workspace" id="workspace" hidden>
@@ -83,7 +94,17 @@
         <button type="button" data-stage="prepare" aria-controls="prepare-stage">Preparation</button>
         <button type="button" data-stage="record" aria-controls="record-stage">Recording</button>
         <button type="button" data-stage="reflect" aria-controls="reflect-stage">Self-evaluation</button>
+        <button type="button" data-stage="slides" aria-controls="slides-stage">NGO slides</button>
       </nav>
+      <section id="slides-stage" class="stage-panel" aria-label="NGO slides" hidden>
+        <div class="panel slides-intro">
+          <p class="eyebrow">For Umeed for Women</p>
+          <h2>Slides about this conversation</h2>
+          <p class="help" id="slides-status"></p>
+          <div class="actions"><button type="button" class="button primary" id="make-slides">Create slides with Gemini</button></div>
+        </div>
+        <div class="deck-inline" id="deck-inline" hidden></div>
+      </section>
       <section id="prepare-stage" class="stage-panel" aria-label="Prepare">
         <form id="preparation-form" class="panel">
           <div class="section-heading"><div><p class="eyebrow">Before the conversation</p><h2>What would you like to say?</h2></div><span class="pill">Your starting point</span></div>
@@ -131,7 +152,8 @@
           <div id="live-monitor-live" hidden>
             <p class="help" id="live-monitor-status">Connecting to Gemini Live…</p>
             <div class="live-monitor-meter" aria-hidden="true"><span id="live-monitor-level"></span></div>
-            <h3>What Gemini hears, live</h3>
+            <h3>What Gemini hears, live (You, Person 1, Person 2…)</h3>
+            <p class="help" id="live-monitor-voices">Telling voices apart once someone speaks.</p>
             <p class="live-monitor-transcript" id="live-monitor-transcript"></p>
           </div>
           <div id="live-monitor-sent" hidden>
@@ -170,6 +192,14 @@
       <footer>Common Ground <span aria-hidden="true">·</span> Prepare with intention. Reflect on your terms.</footer>
     </main>
   </div>
+  <dialog id="deck-dialog" class="deck-dialog" aria-label="Common Ground for Umeed for Women: presentation">
+    <div class="deck-viewer" id="deck-viewer">
+    <div class="deck-bar"><p class="deck-name">Common Ground for Umeed for Women</p><span class="deck-count" id="deck-count"></span><button type="button" class="button secondary" id="deck-fullscreen">Full screen</button><button type="button" class="button secondary" id="deck-close">Close</button></div>
+    <div class="deck-frame" id="deck-frame"><div class="deck-stage" id="deck-stage"></div></div>
+    <div class="deck-controls"><button type="button" class="button secondary" id="deck-prev">← Previous</button><select id="deck-jump" aria-label="Go to slide"></select><button type="button" class="button secondary" id="deck-next">Next →</button><button type="button" class="button secondary" id="deck-notes-toggle" aria-expanded="false">Speaker notes</button></div>
+    <p class="deck-notes" id="deck-notes" hidden></p>
+    </div>
+  </dialog>
   <dialog id="account-dialog" class="account-dialog" aria-labelledby="account-title">
     <div class="section-heading"><div><p class="eyebrow">Signed in as <span id="account-username"></span></p><h2 id="account-title">Your account</h2></div><button type="button" class="text-button" id="close-account">Close</button></div>
     <div id="account-message" class="notice" role="status" aria-live="polite" hidden></div>

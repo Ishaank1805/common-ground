@@ -1,3 +1,5 @@
+import {showDeckIn} from './deck.mjs';
+import {renderSlides} from './conversation-deck.mjs';
 import {LiveStream} from './livestream.mjs';
 import {showInsights} from './insights.mjs';
 import {preparationFromFields, peopleBoxes, samePreparation, evaluationComplete, formatDuration} from './data.mjs';
@@ -101,12 +103,27 @@ function renderStageNavigation() {
     else button.removeAttribute('aria-current');
   });
 }
+// The NGO slides tab: slides written by Gemini from this conversation (POST /slides), checked by the server and
+// kept with it, then drawn here (conversation-deck.mjs). She makes them, and can make them again after changes.
+const SLIDES_INTRO = 'Gemini makes a short presentation about this conversation for Umeed for Women: your goals, plan, the cues you saw, your self-evaluation and next steps. It may only use what you wrote and what the app counted, and any quote is checked word for word against your own writing. Your preparation, self-evaluation and cue history are sent to Google Gemini; the recording is not.';
+function showConversationSlides() {
+  const made = session?.slides;
+  $('#deck-inline').hidden = !made;
+  $('#make-slides').textContent = made ? 'Make them again' : 'Create slides with Gemini';
+  if (!made) { $('#slides-status').textContent = SLIDES_INTRO; return; }
+  const outdated = made.source_revision !== session.evaluation.revision;
+  $('#slides-status').textContent = `Made by Gemini from this conversation on ${new Date(made.created_at).toLocaleString()}.`
+    + (outdated ? ' Your self-evaluation has changed since: make them again to include it.' : '');
+  showDeckIn($('#deck-inline'), {key: `conversation:${session.id}:${made.created_at}`,
+    title: `${session.preparation?.topic || 'Her conversation'}: slides for Umeed`, slides: renderSlides(made.slides)});
+}
 function setStage(name) {
   stage = name;
   $$('.stage-panel').forEach(panel => panel.hidden = panel.id !== `${name}-stage`);
-  const labels = {prepare: 'Step 1 of 3 · Prepare', record: 'Step 2 of 3 · Record', reflect: 'Step 3 of 3 · Self-evaluate'};
+  const labels = {prepare: 'Step 1 of 3 · Prepare', record: 'Step 2 of 3 · Record', reflect: 'Step 3 of 3 · Self-evaluate', slides: 'NGO slides'};
   $('#stage-progress').textContent = labels[name];
   renderStageNavigation();
+  if (name === 'slides') showConversationSlides();
   $(session?.evaluation.state === 'completed' ? '#stage-tabs' : '#stage-progress').scrollIntoView({block: 'start'});
 }
 function markDirty(kind) {
@@ -581,9 +598,14 @@ const facilitator = new LiveFacilitator({
 // The optional live view of what Gemini hears: only on this screen, never saved.
 let showMonitor = (() => { try { return localStorage.getItem('cg-live-monitor') === 'on'; } catch { return false; } })();
 let monitorText = '';
+let monitorLines = [];
+let speakerNames = {};
 function resetMonitor() {
   monitorText = '';
+  monitorLines = [];
+  speakerNames = {};
   $('#live-monitor-transcript').textContent = '';
+  $('#live-monitor-voices').textContent = 'Telling voices apart once someone speaks.';
   $('#live-monitor-status').textContent = 'Connecting to Gemini Live…';
   $('#live-monitor-level').style.width = '0%';
   $('#live-monitor-sent').hidden = true;
@@ -598,14 +620,46 @@ function monitorLevel(samples) {
 function monitorAudio(seconds) {
   $('#live-monitor-status').textContent = `Audio reaching Gemini: ${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
 }
-function monitorHeard({text, finished}) {
-  monitorText = `${monitorText}${text}${finished ? '\n' : ''}`.slice(-1500);
-  $('#live-monitor-transcript').textContent = monitorText;
+function speakerName(id) {
+  return (id && speakerNames[id]) || 'Unclear';
+}
+function transcriptText() {
+  return monitorLines.map(line => `${speakerName(line.speaker)}: ${line.text.trim()}`).join('\n');
+}
+function renderTranscript() {
+  const box = $('#live-monitor-transcript');
+  box.replaceChildren(...monitorLines.map(line => {
+    const name = speakerName(line.speaker);
+    const row = node('p', `said ${name === 'You' ? 'said-you' : name === 'Unclear' ? 'said-unclear' : 'said-other'}`, '');
+    row.append(node('b', '', `${name}: `), document.createTextNode(line.text.trim()));
+    return row;
+  }));
+  box.scrollTop = box.scrollHeight;
+}
+// Each piece Gemini heard joins the line of the same voice; names come from the server and can change.
+function monitorHeard({text, speaker}) {
+  monitorText = `${monitorText}${text}`.slice(-1500);
+  const last = monitorLines.at(-1);
+  if (last && last.speaker === (speaker ?? null)) last.text += text;
+  else monitorLines.push({speaker: speaker ?? null, text});
+  monitorLines = monitorLines.slice(-40);
+  renderTranscript();
+}
+function monitorSpeakers(names, progress = {}) {
+  speakerNames = names || {};
+  renderTranscript();
+  const who = [...new Set(Object.values(speakerNames))].join(', ');
+  const hint = progress.hasSample ? '' : ' Register your voice in Account to be marked “You”.';
+  $('#live-monitor-voices').textContent = progress.speechSeconds
+    ? `Telling voices apart: ${progress.speechSeconds} s of speech, ${progress.voices} voice${progress.voices === 1 ? '' : 's'}${who ? ` (${who})` : ''}.${hint}`
+    : `Telling voices apart once someone speaks.${hint}`;
 }
 function monitorSent({check}) {
   let shown = check;
   try { shown = JSON.stringify(JSON.parse(check.replace(/^CHECK /, '').replace(/ Call assess_moment now\.$/, '')), null, 2); } catch { /* show as sent */ }
-  $('#live-monitor-check').textContent = `${shown}\n\nGemini also uses everything it has heard so far.`;
+  const heard = transcriptText() ? transcriptText().slice(-1500)
+    : '(nothing heard yet: if this stays empty while the audio counter rises, Gemini is not hearing you)';
+  $('#live-monitor-check').textContent = `What was said, as Gemini heard it (sent as live audio, not text):\n${heard}\n\nThe check sent with it:\n${shown}`;
   $('#live-monitor-sent').hidden = false;
 }
 function monitorRejected({reason}) {
@@ -647,6 +701,7 @@ function openLive() {
       facilitator.update('listening', '');
     },
     onHeard: heard => { if (liveStream === stream) monitorHeard(heard); },
+    onSpeakers: (names, progress) => { if (liveStream === stream) monitorSpeakers(names, progress); },
     onAudioConfirmed: seconds => { if (liveStream === stream) monitorAudio(seconds); },
     onSent: sent => { if (liveStream === stream) monitorSent(sent); },
     onRejected: rejected => { if (liveStream === stream) monitorRejected(rejected); },
@@ -948,6 +1003,21 @@ $('#go-reflect').addEventListener('click', () => {
   if (busy || recorder.pending) return;
   renderSummarySources();
   setStage('reflect');
+});
+$('#make-slides').addEventListener('click', async () => {
+  const shown = session;
+  if (!shown || busy) return;
+  const button = $('#make-slides');
+  button.disabled = true;
+  $('#slides-status').textContent = 'Gemini is making the slides. This can take up to a minute…';
+  try {
+    const updated = await api(`/sessions/${shown.id}/slides`, 'POST', {});
+    if (session?.id === shown.id) { session.slides = updated.slides; showConversationSlides(); }
+  } catch (error) {
+    $('#slides-status').textContent = `${error.message} Your conversation is unchanged.`;
+  } finally {
+    button.disabled = false;
+  }
 });
 $$('#stage-tabs button').forEach(button => button.addEventListener('click', () => {
   if (!busy && !recorder.pending) setStage(button.dataset.stage);
