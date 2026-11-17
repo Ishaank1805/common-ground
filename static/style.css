@@ -182,3 +182,10 @@
 /* One text box per person. Space or a comma opens the next box. */
 .people-field { margin-top: 0; }
 .person-row input { min-height: 44px; }
+
+/* Optional live view of what Gemini hears (instant prompts). */
+.live-monitor h2 { font-size: 16px; margin: 0 0 6px; }
+.live-monitor-meter { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; margin: 6px 0 10px; }
+.live-monitor-meter span { display: block; height: 100%; width: 0; background: #31594c; transition: width 0.1s linear; }
+.live-monitor-transcript { white-space: pre-wrap; max-height: 9em; overflow-y: auto; font-size: 14px; line-height: 1.5; margin: 0 0 8px; }
+.live-monitor pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; max-height: 14em; overflow-y: auto; }

@@ -111,6 +111,7 @@
             <label class="prompt-mode"><input type="radio" name="prompt-mode" value="auto"><span><strong>As we go <span class="prompt-suggested" data-mode="auto" hidden>Suggested</span></strong><small>A cue refreshes about every 45 seconds, only when it might help.</small></span></label>
           </fieldset>
           <label class="share-check prompt-instant" id="prompt-instant-field" hidden><input type="checkbox" id="prompt-instant"> Instant prompts (experimental): the whole conversation streams to Google while prompts are on, so cues arrive in about a second.</label>
+          <label class="share-check prompt-instant" id="prompt-monitor-field" hidden><input type="checkbox" id="prompt-monitor"> Show what Gemini hears (a live transcript, only on this screen and never saved)</label>
           <label class="prompt-language" id="prompt-language-field" for="prompt-language">Prompt language
             <select id="prompt-language"><option value="en">English</option><option value="hi" lang="hi">हिन्दी (Hindi)</option><option value="hinglish">Hinglish</option></select>
           </label>
@@ -124,6 +125,14 @@
             <div id="prompt-outline" class="prompt-outline"></div>
           </div>
           <ol id="prompt-history" class="prompt-history" hidden></ol>
+        </section>
+        <section class="panel live-monitor" id="live-monitor" hidden aria-live="polite">
+          <h2>What Gemini hears</h2>
+          <p class="help" id="live-monitor-status">Connecting to Gemini Live…</p>
+          <div class="live-monitor-meter" aria-hidden="true"><span id="live-monitor-level"></span></div>
+          <p class="live-monitor-transcript" id="live-monitor-transcript"></p>
+          <details id="live-monitor-sent" hidden><summary>Sent with your last “Get a prompt”</summary><pre id="live-monitor-check"></pre></details>
+          <p class="help">Only on this screen. The transcript is never saved.</p>
         </section>
         <details class="panel follow-up-panel" id="follow-up-panel" hidden>
           <summary>Haven’t had this conversation yet?</summary>

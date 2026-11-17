@@ -557,7 +557,10 @@ const recorder = new ConversationRecorder({
 const screenAwake = new ScreenAwake();
 const facilitator = new LiveFacilitator({
   onChange: renderFacilitator,
-  onAudio: (samples, rate) => liveStream?.sendAudio(samples, rate),
+  onAudio: (samples, rate) => {
+    liveStream?.sendAudio(samples, rate);
+    if (liveStream) monitorLevel(samples);
+  },
   request: async ({audio, requested, mode, signal}) => {
     // Instant prompts: Gemini Live has already heard everything, so only the check is sent.
     if (liveStream?.ready) return liveStream.check({requested, mode, elapsedSeconds: recorder.elapsed()});
@@ -573,6 +576,40 @@ const facilitator = new LiveFacilitator({
     return data;
   },
 });
+// The optional live view of what Gemini hears: only on this screen, never saved.
+let showMonitor = (() => { try { return localStorage.getItem('cg-live-monitor') === 'on'; } catch { return false; } })();
+let monitorText = '';
+function resetMonitor() {
+  monitorText = '';
+  $('#live-monitor-transcript').textContent = '';
+  $('#live-monitor-status').textContent = 'Connecting to Gemini Live…';
+  $('#live-monitor-level').style.width = '0%';
+  $('#live-monitor-sent').hidden = true;
+}
+function monitorLevel(samples) {
+  if (!showMonitor || !samples.length) return;
+  let sum = 0;
+  for (const sample of samples) sum += sample * sample;
+  $('#live-monitor-level').style.width = `${Math.round(Math.min(1, Math.sqrt(sum / samples.length) * 8) * 100)}%`;
+}
+function monitorAudio(seconds) {
+  $('#live-monitor-status').textContent = `Audio reaching Gemini: ${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+}
+function monitorHeard({text, finished}) {
+  monitorText = `${monitorText}${text}${finished ? '\n' : ''}`.slice(-1500);
+  $('#live-monitor-transcript').textContent = monitorText;
+}
+function monitorSent({check}) {
+  let shown = check;
+  try { shown = JSON.stringify(JSON.parse(check.replace(/^CHECK /, '').replace(/ Call assess_moment now\.$/, '')), null, 2); } catch { /* show as sent */ }
+  $('#live-monitor-check').textContent = `${shown}\n\nGemini also uses everything it has heard so far.`;
+  $('#live-monitor-sent').hidden = false;
+}
+function monitorRejected({reason}) {
+  if (!reason) return;
+  $('#live-monitor-check').textContent += `\n\nGemini's answer was not used: ${reason}`;
+  $('#live-monitor-sent').hidden = false;
+}
 const LIVE_CHECK_MS = 15000; // Gemini Live has heard everything, so "As we go" can check more often.
 function useInterval(milliseconds) {
   facilitator.intervalMs = milliseconds;
@@ -589,6 +626,10 @@ function openLive() {
       facilitator.guidance = guidance;
       facilitator.update('listening', '');
     },
+    onHeard: heard => { if (liveStream === stream) monitorHeard(heard); },
+    onAudioConfirmed: seconds => { if (liveStream === stream) monitorAudio(seconds); },
+    onSent: sent => { if (liveStream === stream) monitorSent(sent); },
+    onRejected: rejected => { if (liveStream === stream) monitorRejected(rejected); },
     onClose: message => {
       if (liveStream !== stream) return;
       liveStream = null;
@@ -597,7 +638,8 @@ function openLive() {
     },
   });
   liveStream = stream;
-  stream.open().then(() => { if (liveStream === stream) useInterval(LIVE_CHECK_MS); }).catch(() => {});
+  resetMonitor();
+  stream.open().then(() => { if (liveStream === stream) { useInterval(LIVE_CHECK_MS); renderFacilitator(); } }).catch(() => {});
 }
 function closeLive() {
   const stream = liveStream;
@@ -664,6 +706,9 @@ function renderFacilitator() {
   $('#prompt-language').value = promptLanguage;
   $('#prompt-instant-field').hidden = recording || saved || !available || !config?.live_prompts || promptMode === 'off';
   $('#prompt-instant').checked = instantPrompts;
+  $('#prompt-monitor-field').hidden = $('#prompt-instant-field').hidden || !instantPrompts;
+  $('#prompt-monitor').checked = showMonitor;
+  $('#live-monitor').hidden = !(showMonitor && instantPrompts && recording && liveStream);
   $('#prompts-live').hidden = !live;
   $('#prompt-history').hidden = !saved;
   if (live) renderLivePrompt();
@@ -921,6 +966,11 @@ $('#ask-prompt').addEventListener('click', () => {
   // Her next planned point appears at once; the AI cue replaces it when it arrives.
   if (facilitator.active && !facilitator.preparing) instantCue = {cue: nextPlannedPoint(session?.chosen_plan, facilitator.guidance), after: facilitator.guidance};
   facilitator.ask(true);
+  renderFacilitator();
+});
+$('#prompt-monitor').addEventListener('change', event => {
+  showMonitor = event.target.checked;
+  try { localStorage.setItem('cg-live-monitor', showMonitor ? 'on' : 'off'); } catch { /* private browsing */ }
   renderFacilitator();
 });
 $('#prompt-instant').addEventListener('change', event => {

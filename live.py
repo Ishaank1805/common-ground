@@ -9,6 +9,7 @@ the model's spoken audio is never used, and the API key never leaves this server
 """
 import asyncio
 import json
+import logging
 import os
 import queue
 import threading
@@ -23,6 +24,8 @@ MAX_AUDIO_FRAME = 64 * 1024  # bytes of 16-bit PCM per WebSocket message (about 
 CHECK_TIMEOUT_SECONDS = 20
 MAX_RECONNECT_FAILURES = 3
 NO_PROMPT = "No prompt this time. Your recording continues."
+LOG = logging.getLogger("live")
+TRANSCRIBE = os.environ.get("LIVE_TRANSCRIPT", "1").strip().lower() not in ("0", "false", "no", "off")
 
 LIVE_INTRO = """This is a live session: you hear the whole conversation as one continuous stream, as it happens,
 because the person chose instant prompts. Never speak and never answer aloud; respond only by calling
@@ -191,7 +194,9 @@ class Relay:
             system_instruction=self.instruction,
             tools=[{"function_declarations": [self.declaration]}],
             context_window_compression=types.ContextWindowCompressionConfig(sliding_window=types.SlidingWindow()),
-            session_resumption=types.SessionResumptionConfig(handle=self.handle))
+            session_resumption=types.SessionResumptionConfig(handle=self.handle),
+            # For the optional live view of what Gemini hears; never saved. LIVE_TRANSCRIPT=0 turns it off.
+            input_audio_transcription=types.AudioTranscriptionConfig() if TRANSCRIBE else None)
 
     def _session(self):
         if self.connect:
@@ -265,7 +270,12 @@ class Relay:
                 for function_call in (getattr(call, "function_calls", None) or []):
                     self.events.put(("call", {"id": function_call.id, "name": function_call.name,
                                               "args": _plain(function_call.args or {})}))
-                # Spoken audio and transcripts are ignored: cues come only from assess_moment.
+                content = getattr(message, "server_content", None)
+                heard = getattr(content, "input_transcription", None) if content is not None else None
+                if heard is not None and getattr(heard, "text", None):
+                    # What Gemini heard, for the optional live view on her screen; never saved.
+                    self.events.put(("heard", {"text": heard.text, "finished": bool(getattr(heard, "finished", False))}))
+                # Gemini's own spoken audio is ignored: cues come only from assess_moment.
             if not seen:
                 return  # The connection has ended.
 
@@ -279,13 +289,15 @@ def serve(ws, relay, on_check, on_call, clock=time.monotonic, receive_timeout=0.
     """
     from simple_websocket import ConnectionClosed
     pending = {}  # check id -> (requested, elapsed_seconds, mode, sent at)
-    mode, streamed_bytes = "on_request", 0
+    mode, streamed_bytes, next_report = "on_request", 0, 2 * PCM_RATE
     try:
         relay.start()
         while True:
             for kind, payload in relay.drain():
                 if kind == "ready":
                     ws.send(json.dumps({"type": "ready"}))
+                elif kind == "heard":
+                    ws.send(json.dumps({"type": "heard", **payload}))
                 elif kind == "stopped":
                     ws.send(json.dumps({"type": "stopped", "message": payload}))
                     return
@@ -300,9 +312,10 @@ def serve(ws, relay, on_check, on_call, clock=time.monotonic, receive_timeout=0.
                         # Unprompted judgements reach her phone only when they are threats; others are dropped.
                         if guidance is not None and (check_id is not None or (guidance.get("prompt") or {}).get("kind") == "step_away"):
                             ws.send(json.dumps({"type": "guidance", "id": check_id, "guidance": guidance}))
-                    except ValueError:
+                    except ValueError as error:
+                        LOG.warning("Instant prompt judgement rejected: %s", error)
                         if check_id is not None:
-                            ws.send(json.dumps({"type": "error", "id": check_id, "message": NO_PROMPT}))
+                            ws.send(json.dumps({"type": "error", "id": check_id, "message": NO_PROMPT, "reason": str(error)}))
                     relay.answer(payload["id"], payload["name"])
             now = clock()
             for check_id in [key for key, value in pending.items() if now - value[3] > CHECK_TIMEOUT_SECONDS]:
@@ -317,6 +330,9 @@ def serve(ws, relay, on_check, on_call, clock=time.monotonic, receive_timeout=0.
                 if 0 < len(message) <= MAX_AUDIO_FRAME and len(message) % 2 == 0:
                     streamed_bytes += len(message)
                     relay.audio(bytes(message))
+                    if streamed_bytes >= next_report:  # About once a second, confirm that her audio is arriving.
+                        ws.send(json.dumps({"type": "audio", "seconds": round(streamed_bytes / (2 * PCM_RATE), 1)}))
+                        next_report += 2 * PCM_RATE
                 continue
             try:
                 control = json.loads(message)
@@ -331,7 +347,9 @@ def serve(ws, relay, on_check, on_call, clock=time.monotonic, receive_timeout=0.
                     and isinstance(requested, bool) and isinstance(elapsed, (int, float)) and not isinstance(elapsed, bool)
                     and 0 <= elapsed <= 86400 and control.get("mode") in ("auto", "on_request")):
                 pending[check_id] = (requested, float(elapsed), control["mode"], clock())
-                relay.check(on_check(requested, float(elapsed)))
+                text = on_check(requested, float(elapsed))
+                relay.check(text)
+                ws.send(json.dumps({"type": "sent", "id": check_id, "check": text}))  # Exactly what was asked, for the live view.
     except ConnectionClosed:
         return
     finally:

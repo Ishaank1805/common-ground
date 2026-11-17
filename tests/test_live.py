@@ -158,6 +158,15 @@ class RelayTests(unittest.TestCase):
         self.assertEqual((answer.id, answer.name, answer.response), ("call-1", "assess_moment", {"result": "ok"}))
         self.assertEqual(answer.scheduling, live_types().FunctionResponseScheduling.SILENT)
 
+    def test_gemini_transcribes_what_it_hears_for_the_live_view(self):
+        self.assertIsNotNone(self.relay._config().input_audio_transcription)
+        self.relay.start()
+        self.events("ready")
+        self.sessions[0].push(SimpleNamespace(tool_call=None, go_away=None, session_resumption_update=None,
+                                              server_content=SimpleNamespace(input_transcription=SimpleNamespace(text="The fees", finished=False))))
+        [(_, payload)] = self.events("heard")
+        self.assertEqual(payload, {"text": "The fees", "finished": False})
+
     def test_a_connection_gemini_ends_is_resumed_with_the_latest_handle(self):
         self.relay.start()
         self.events("ready")
@@ -262,7 +271,9 @@ class ServeTests(unittest.TestCase):
             None,
         ], on_call=lambda args: guidance)
         self.assertEqual(ws.sent[0], {"type": "ready"})
-        self.assertEqual(ws.sent[1], {"type": "guidance", "id": 1, "guidance": guidance})
+        self.assertIn({"type": "audio", "seconds": 1.0}, ws.sent)  # Her phone hears that audio is arriving...
+        self.assertIn({"type": "sent", "id": 1, "check": "CHECK True 12.0"}, ws.sent)  # ...and exactly what was asked.
+        self.assertEqual([m for m in ws.sent if m["type"] == "guidance"], [{"type": "guidance", "id": 1, "guidance": guidance}])
         self.assertEqual(calls, [(True, 12.0, "on_request")])
         self.assertEqual((len(relay.audio_frames), relay.checks, relay.answers), (1, ["CHECK True 12.0"], ["c1"]))
         self.assertTrue(relay.closed)
@@ -273,7 +284,8 @@ class ServeTests(unittest.TestCase):
             lambda relay: relay.queue.append(("call", {"id": "c9", "name": "assess_moment", "args": CALL_ARGS})),
             None,
         ], on_call=lambda args: {"prompt": {"kind": "step_away"}})
-        self.assertEqual(ws.sent[1], {"type": "guidance", "id": None, "guidance": {"prompt": {"kind": "step_away"}}})
+        self.assertEqual([m for m in ws.sent if m["type"] == "guidance"],
+                         [{"type": "guidance", "id": None, "guidance": {"prompt": {"kind": "step_away"}}}])
         self.assertEqual(calls, [(False, 2.0, "on_request")])  # A background judgement at the streamed time.
         self.assertEqual(relay.answers, ["c9"])
 
@@ -288,6 +300,14 @@ class ServeTests(unittest.TestCase):
     def test_the_live_rules_ask_for_the_last_minute_not_the_pause(self):
         for rule in ("above all its last minute of speech", "never answer a concern", "Do not call it at any other time"):
             self.assertIn(rule, live.LIVE_INTRO)
+
+    def test_what_gemini_hears_is_shown_live_but_never_saved(self):
+        ws, relay, calls = self.run_serve([
+            lambda relay: relay.queue.append(("heard", {"text": "The fees are too high.", "finished": True})),
+            None,
+        ], on_call=lambda args: {})
+        self.assertIn({"type": "heard", "text": "The fees are too high.", "finished": True}, ws.sent)
+        self.assertEqual(calls, [])  # Nothing is validated or saved for a transcript.
 
     def test_invalid_judgements_and_slow_checks_end_quietly(self):
         now = [100.0]
@@ -305,7 +325,7 @@ class ServeTests(unittest.TestCase):
             json.dumps({"type": "stop"}),
         ], on_call=invalid, clock=lambda: now[0])
         errors = [message for message in ws.sent if message["type"] == "error"]
-        self.assertEqual(errors, [{"type": "error", "id": 2, "message": live.NO_PROMPT}, {"type": "error", "id": 3, "message": live.NO_PROMPT}])
+        self.assertEqual([(e["id"], e["message"], e.get("reason")) for e in errors], [(2, live.NO_PROMPT, "bad"), (3, live.NO_PROMPT, None)])
         self.assertEqual(relay.answers, ["c2"])  # Even an invalid call is answered, silently.
         self.assertEqual(len(relay.checks), 2)
         self.assertTrue(relay.closed)

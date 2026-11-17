@@ -79,6 +79,22 @@ const tests = {
     assert.deepEqual(JSON.parse(socket.sent.at(-1)), {type: 'stop'});
     assert.deepEqual(closes, []);
   },
+  async 'what Gemini hears, audio arriving and what was asked reach the live view'() {
+    const seen = [];
+    const {live} = stream({onHeard: heard => seen.push(['heard', heard]), onAudioConfirmed: seconds => seen.push(['audio', seconds]),
+      onSent: sent => seen.push(['sent', sent]), onRejected: rejected => seen.push(['rejected', rejected])});
+    const opening = live.open();
+    FakeSocket.last.serverSays({type: 'ready'});
+    await opening;
+    FakeSocket.last.serverSays({type: 'audio', seconds: 2});
+    FakeSocket.last.serverSays({type: 'heard', text: 'The fees', finished: false});
+    const answer = live.check({requested: true, mode: 'on_request', elapsedSeconds: 5});
+    FakeSocket.last.serverSays({type: 'sent', id: 1, check: 'CHECK {} Call assess_moment now.'});
+    FakeSocket.last.serverSays({type: 'error', id: 1, message: 'No prompt this time.', reason: 'Cue must be text.'});
+    await assert.rejects(answer, /No prompt/);
+    assert.deepEqual(seen, [['audio', 2], ['heard', {text: 'The fees', finished: false}],
+      ['sent', {id: 1, check: 'CHECK {} Call assess_moment now.'}], ['rejected', {id: 1, reason: 'Cue must be text.'}]]);
+  },
   async 'a refused connection rejects opening'() {
     const {live} = stream();
     const opening = live.open();

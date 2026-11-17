@@ -23,8 +23,10 @@ function parse(data) {
 
 export class LiveStream {
   constructor({url, WebSocketClass = globalThis.WebSocket, onCue = () => {}, onClose = () => {},
+    onHeard = () => {}, onAudioConfirmed = () => {}, onSent = () => {}, onRejected = () => {},
     openTimeoutMs = 15000, checkTimeoutMs = 25000, timers = globalThis}) {
-    Object.assign(this, {url, WebSocketClass, onCue, onClose, openTimeoutMs, checkTimeoutMs, timers});
+    Object.assign(this, {url, WebSocketClass, onCue, onClose, onHeard, onAudioConfirmed, onSent, onRejected,
+      openTimeoutMs, checkTimeoutMs, timers});
     this.ready = false;
     this.closed = false;
     this.socket = null;
@@ -63,7 +65,14 @@ export class LiveStream {
           // A check's answer, or (with no id) a threat reported at once.
           this.settleCheck(message.id, check => check.resolve(message.guidance), () => this.onCue(message.guidance));
         } else if (message.type === 'error') {
+          this.onRejected({id: message.id, reason: String(message.reason || '')});
           this.settleCheck(message.id, check => check.reject(new Error(message.message)));
+        } else if (message.type === 'heard') {
+          this.onHeard({text: String(message.text || ''), finished: Boolean(message.finished)});
+        } else if (message.type === 'audio') {
+          this.onAudioConfirmed(Number(message.seconds) || 0);
+        } else if (message.type === 'sent') {
+          this.onSent({id: message.id, check: String(message.check || '')});
         } else if (message.type === 'stopped') {
           this.stopMessage = message.message || '';
         }
