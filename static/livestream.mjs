@@ -23,9 +23,9 @@ function parse(data) {
 
 export class LiveStream {
   constructor({url, WebSocketClass = globalThis.WebSocket, onCue = () => {}, onClose = () => {},
-    onHeard = () => {}, onAudioConfirmed = () => {}, onSent = () => {}, onRejected = () => {},
+    onHeard = () => {}, onAudioConfirmed = () => {}, onSent = () => {}, onRejected = () => {}, onSetup = () => {}, onAnswered = () => {},
     openTimeoutMs = 15000, checkTimeoutMs = 25000, timers = globalThis}) {
-    Object.assign(this, {url, WebSocketClass, onCue, onClose, onHeard, onAudioConfirmed, onSent, onRejected,
+    Object.assign(this, {url, WebSocketClass, onCue, onClose, onHeard, onAudioConfirmed, onSent, onRejected, onSetup, onAnswered,
       openTimeoutMs, checkTimeoutMs, timers});
     this.ready = false;
     this.closed = false;
@@ -67,6 +67,10 @@ export class LiveStream {
         } else if (message.type === 'error') {
           this.onRejected({id: message.id, reason: String(message.reason || '')});
           this.settleCheck(message.id, check => check.reject(new Error(message.message)));
+        } else if (message.type === 'setup') {
+          this.onSetup(String(message.instruction || ''));
+        } else if (message.type === 'answered') {
+          this.onAnswered({id: message.id, raw: message.raw, shown: message.shown || null, reason: message.reason || ''});
         } else if (message.type === 'heard') {
           this.onHeard({text: String(message.text || ''), finished: Boolean(message.finished)});
         } else if (message.type === 'audio') {

@@ -53,6 +53,8 @@ class SituationPolicyTests(unittest.TestCase):
         self.assertEqual(kind(gemini.validate_guidance(concern, STEPS, GOALS, True, recent, 160)), "respond_to_concern")  # She asked.
 
     def test_the_cue_must_be_usable_when_it_is_shown(self):
+        with self.assertRaises(ValueError):  # The words she could say next are required for any cue she sees.
+            gemini.validate_guidance({**reply("stuck"), "cue": {**CUE, "example_wording": " "}}, STEPS, GOALS, requested=True)
         self.assertIsNone(gemini.validate_guidance(reply("on_track", text=""), STEPS, GOALS, requested=False)["prompt"])
         with self.assertRaises(ValueError):
             gemini.validate_guidance(reply("stuck", text=" "), STEPS, GOALS, requested=True)
@@ -78,7 +80,8 @@ class SituationPolicyTests(unittest.TestCase):
         self.assertNotIn("kind", schema["properties"]["cue"]["properties"])  # The server, not the model, picks the kind.
         for rule in ("choose the first that applies", "always write the cue that fits your situation",
                      "It\n  is still unanswered when it is followed by silence", "someone else responded to it",
-                     "requested only says whether", "never soften or skip a\njudgement"):
+                     "requested only says whether", "never soften or skip a\njudgement",
+                     "what should she say next to move toward her own goals", "example_wording is the heart of the cue"):
             self.assertIn(rule, gemini.FACILITATOR_PROMPT)
 
 

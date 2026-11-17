@@ -296,6 +296,8 @@ def serve(ws, relay, on_check, on_call, clock=time.monotonic, receive_timeout=0.
             for kind, payload in relay.drain():
                 if kind == "ready":
                     ws.send(json.dumps({"type": "ready"}))
+                    if getattr(relay, "instruction", ""):  # The instructions, once, for the live view.
+                        ws.send(json.dumps({"type": "setup", "instruction": relay.instruction}))
                 elif kind == "heard":
                     ws.send(json.dumps({"type": "heard", **payload}))
                 elif kind == "stopped":
@@ -307,15 +309,21 @@ def serve(ws, relay, on_check, on_call, clock=time.monotonic, receive_timeout=0.
                         requested, elapsed, mode, _ = pending.pop(check_id)
                     else:  # A threat reported at once, without a check.
                         requested, elapsed = False, streamed_bytes / (2 * PCM_RATE)
+                    shown, reason = False, None
                     try:
                         guidance = on_call(payload["args"], requested, elapsed, mode, unprompted=check_id is None)
                         # Unprompted judgements reach her phone only when they are threats; others are dropped.
                         if guidance is not None and (check_id is not None or (guidance.get("prompt") or {}).get("kind") == "step_away"):
                             ws.send(json.dumps({"type": "guidance", "id": check_id, "guidance": guidance}))
+                            shown = True
                     except ValueError as error:
+                        guidance, reason = None, str(error)
                         LOG.warning("Instant prompt judgement rejected: %s", error)
                         if check_id is not None:
-                            ws.send(json.dumps({"type": "error", "id": check_id, "message": NO_PROMPT, "reason": str(error)}))
+                            ws.send(json.dumps({"type": "error", "id": check_id, "message": NO_PROMPT, "reason": reason}))
+                    if check_id is not None or shown:  # Gemini's exact answer and what the app made of it, for the live view.
+                        ws.send(json.dumps({"type": "answered", "id": check_id, "raw": payload["args"],
+                                            "shown": (guidance or {}).get("prompt"), "reason": reason}))
                     relay.answer(payload["id"], payload["name"])
             now = clock()
             for check_id in [key for key, value in pending.items() if now - value[3] > CHECK_TIMEOUT_SECONDS]:

@@ -189,3 +189,11 @@
 .live-monitor-meter span { display: block; height: 100%; width: 0; background: #31594c; transition: width 0.1s linear; }
 .live-monitor-transcript { white-space: pre-wrap; max-height: 9em; overflow-y: auto; font-size: 14px; line-height: 1.5; margin: 0 0 8px; }
 .live-monitor pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; max-height: 14em; overflow-y: auto; }
+
+/* Input and output of the last request to Gemini. */
+.live-monitor h3 { font-size: 14px; margin: 12px 0 4px; }
+#live-monitor-sent:not([hidden]) ~ #live-monitor-empty { display: none; }
+
+/* A cue is what she could say next; the hint above it says what the line does. */
+.prompt-card .prompt-hint { font-size: 14px; opacity: 0.8; margin: 2px 0 6px; }
+.prompt-card .prompt-line { font-size: 20px; line-height: 1.4; font-weight: 500; margin: 4px 0 0; }

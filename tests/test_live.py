@@ -25,7 +25,7 @@ PLAN = {"understanding": "Explain the course, then agree a next step.", "assumpt
 SESSION = {"preparation": PREPARATION, "chosen_plan": PLAN}
 CALL_ARGS = {"threat": False, "audio_status": "clear", "notes": "Fees came up.", "current_step_id": "step1", "raised_goals": [],
              "situation": "unanswered_concern", "situation_evidence": "A worry about fees was not answered.",
-             "cue": {"text": "Acknowledge the worry about fees.", "example_wording": "", "step_id": "step1"}}
+             "cue": {"text": "Acknowledge the worry about fees.", "example_wording": "Could I explain why this matters to me?", "step_id": "step1"}}
 
 
 def wait_for(condition, timeout=5):
@@ -250,8 +250,10 @@ class FakeRelay:
 
 @unittest.skipUnless(HAVE_SDK, "simple-websocket unavailable")
 class ServeTests(unittest.TestCase):
-    def run_serve(self, script, on_call, clock=None):
+    def run_serve(self, script, on_call, clock=None, instruction=None):
         relay, calls = FakeRelay(), []
+        if instruction:
+            relay.instruction = instruction
 
         def recording_call(args, requested, elapsed, mode, unprompted=False):
             calls.append((requested, elapsed, mode))
@@ -309,6 +311,17 @@ class ServeTests(unittest.TestCase):
         self.assertIn({"type": "heard", "text": "The fees are too high.", "finished": True}, ws.sent)
         self.assertEqual(calls, [])  # Nothing is validated or saved for a transcript.
 
+    def test_every_answer_shows_what_went_in_and_what_came_back(self):
+        guidance = {"prompt": {"kind": "respond_to_concern", "text": "Acknowledge the worry."}}
+        ws, relay, _ = self.run_serve([
+            json.dumps({"type": "check", "id": 7, "requested": True, "elapsed_seconds": 5, "mode": "on_request"}),
+            lambda relay: relay.queue.append(("call", {"id": "c7", "name": "assess_moment", "args": CALL_ARGS})),
+            None,
+        ], on_call=lambda args: guidance, instruction="LIVE INSTRUCTIONS")
+        self.assertIn({"type": "setup", "instruction": "LIVE INSTRUCTIONS"}, ws.sent)
+        self.assertIn({"type": "sent", "id": 7, "check": "CHECK True 5.0"}, ws.sent)
+        self.assertIn({"type": "answered", "id": 7, "raw": CALL_ARGS, "shown": guidance["prompt"], "reason": None}, ws.sent)
+
     def test_invalid_judgements_and_slow_checks_end_quietly(self):
         now = [100.0]
 
@@ -326,6 +339,7 @@ class ServeTests(unittest.TestCase):
         ], on_call=invalid, clock=lambda: now[0])
         errors = [message for message in ws.sent if message["type"] == "error"]
         self.assertEqual([(e["id"], e["message"], e.get("reason")) for e in errors], [(2, live.NO_PROMPT, "bad"), (3, live.NO_PROMPT, None)])
+        self.assertIn({"type": "answered", "id": 2, "raw": {}, "shown": None, "reason": "bad"}, ws.sent)  # The rejected answer, as given.
         self.assertEqual(relay.answers, ["c2"])  # Even an invalid call is answered, silently.
         self.assertEqual(len(relay.checks), 2)
         self.assertTrue(relay.closed)

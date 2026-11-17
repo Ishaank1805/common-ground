@@ -274,11 +274,11 @@ class FacilitatorModelTests(unittest.TestCase):
             "raised_goals": [{"goal_id": "g2", "evidence": "A next step was proposed."}, {"goal_id": "g1", "evidence": " Why the course matters came up. "},
                              {"goal_id": "g1", "evidence": "Said again later."}],
             "situation": "stuck", "situation_evidence": "Her point was followed by silence.",
-            "cue": {"text": " Bring up the costs. ", "example_wording": "", "step_id": "step2"}})
+            "cue": {"text": " Bring up the costs. ", "example_wording": "Could I explain why this matters to me?", "step_id": "step2"}})
         result = gemini.facilitate(self.SESSION, wav(), self.CONTEXT)
         self.assertEqual(result, {"audio_status": "unclear", "notes": "A cost concern came up.", "current_step_id": None,
                                   "raised_goal_ids": ["g1", "g2"], "goal_evidence": {"g1": "Why the course matters came up.", "g2": "A next step was proposed."}, "situation": "stuck", "prompt": {
-                                      "kind": "next_point", "text": "Bring up the costs.", "example_wording": "", "step_id": "step2"}})
+                                      "kind": "next_point", "text": "Bring up the costs.", "example_wording": "Could I explain why this matters to me?", "step_id": "step2"}})
         body = json.loads(transport.call_args.args[0].data)
         text = body["contents"][0]["parts"][0]["text"]
         sent = json.loads(text)
@@ -333,7 +333,7 @@ class FacilitatorModelTests(unittest.TestCase):
     @patch("gemini.urlopen")
     def test_asking_sends_the_whole_conversation_then_the_latest_minute(self, transport):
         transport.return_value = api_response({"threat": False, "audio_status": "clear", "notes": "Fees came up.", "current_step_id": "step1",
-                                               "raised_goals": [{"goal_id": "g1", "evidence": "Fees came up."}], "situation": "on_track", "situation_evidence": "", "cue": {"text": "Bring up the course.", "example_wording": "", "step_id": "no step"}})
+                                               "raised_goals": [{"goal_id": "g1", "evidence": "Fees came up."}], "situation": "on_track", "situation_evidence": "", "cue": {"text": "Bring up the course.", "example_wording": "Could I explain why this matters to me?", "step_id": "no step"}})
         gemini.facilitate(self.SESSION, wav(), {**self.CONTEXT, "conversation_seconds": 312.46}, conversation=b"M4A-CONVERSATION")
         self.assertEqual(transport.call_args.kwargs["timeout"], gemini.FACILITATOR_CONVERSATION_TIMEOUT)
         parts = json.loads(transport.call_args.args[0].data)["contents"][0]["parts"]
@@ -351,7 +351,7 @@ class FacilitatorModelTests(unittest.TestCase):
     def test_goals_count_only_with_evidence_from_the_conversation(self):
         result = gemini.validate_guidance({
             "audio_status": "clear", "notes": "", "current_step_id": "step1", "threat": False, "situation": "on_track", "situation_evidence": "",
-            "cue": {"text": "Bring up the course.", "example_wording": "", "step_id": "no step"},
+            "cue": {"text": "Bring up the course.", "example_wording": "Could I explain why this matters to me?", "step_id": "no step"},
             "raised_goals": [{"goal_id": "g1", "evidence": "Why the course matters was explained."},
                              {"goal_id": "g2", "evidence": "   "}]}, ["step1", "step2"], ["g1", "g2"])
         self.assertEqual(result["raised_goal_ids"], ["g1"])  # g2 had no evidence, so it is dropped.
@@ -360,7 +360,7 @@ class FacilitatorModelTests(unittest.TestCase):
     @patch("gemini.urlopen")
     def test_cues_use_the_chosen_language(self, transport):
         transport.return_value = api_response({"threat": False, "audio_status": "clear", "notes": "", "current_step_id": "step1",
-                                               "raised_goals": [], "situation": "on_track", "situation_evidence": "", "cue": {"text": "Bring up the course.", "example_wording": "", "step_id": "no step"}})
+                                               "raised_goals": [], "situation": "on_track", "situation_evidence": "", "cue": {"text": "Bring up the course.", "example_wording": "Could I explain why this matters to me?", "step_id": "no step"}})
         gemini.facilitate(self.SESSION, wav(), {**self.CONTEXT, "language": "hi"})
         sent = json.loads(json.loads(transport.call_args.args[0].data)["contents"][0]["parts"][0]["text"])
         self.assertEqual(sent["cue_language"], "Hindi in Devanagari script")
@@ -375,7 +375,7 @@ class FacilitatorModelTests(unittest.TestCase):
             gemini.facilitate({**self.SESSION, "chosen_plan": None}, wav(), self.CONTEXT)
         transport.assert_not_called()
         transport.return_value = api_response({"threat": False, "audio_status": "clear", "notes": "", "current_step_id": "step9",
-                                               "raised_goals": [], "situation": "on_track", "situation_evidence": "", "cue": {"text": "Bring up the course.", "example_wording": "", "step_id": "no step"}})
+                                               "raised_goals": [], "situation": "on_track", "situation_evidence": "", "cue": {"text": "Bring up the course.", "example_wording": "Could I explain why this matters to me?", "step_id": "no step"}})
         with self.assertRaisesRegex(gemini.GeminiError, "recording continues"):
             gemini.facilitate(self.SESSION, wav(), self.CONTEXT)
 

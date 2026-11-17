@@ -95,6 +95,16 @@ const tests = {
     assert.deepEqual(seen, [['audio', 2], ['heard', {text: 'The fees', finished: false}],
       ['sent', {id: 1, check: 'CHECK {} Call assess_moment now.'}], ['rejected', {id: 1, reason: 'Cue must be text.'}]]);
   },
+  async 'the instructions and every raw answer reach the live view'() {
+    const seen = [];
+    const {live} = stream({onSetup: text => seen.push(['setup', text]), onAnswered: answered => seen.push(['answered', answered])});
+    const opening = live.open();
+    FakeSocket.last.serverSays({type: 'ready'});
+    FakeSocket.last.serverSays({type: 'setup', instruction: 'LIVE INSTRUCTIONS'});
+    await opening;
+    FakeSocket.last.serverSays({type: 'answered', id: 1, raw: {situation: 'stuck'}, shown: null, reason: null});
+    assert.deepEqual(seen, [['setup', 'LIVE INSTRUCTIONS'], ['answered', {id: 1, raw: {situation: 'stuck'}, shown: null, reason: ''}]]);
+  },
   async 'a refused connection rejects opening'() {
     const {live} = stream();
     const opening = live.open();

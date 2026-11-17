@@ -565,7 +565,8 @@ const facilitator = new LiveFacilitator({
     // Instant prompts: Gemini Live has already heard everything, so only the check is sent.
     if (liveStream?.ready) return liveStream.check({requested, mode, elapsedSeconds: recorder.elapsed()});
     const form = new FormData();
-    form.append('context', JSON.stringify({mode, requested, capture_id: recorder.startedAt, elapsed_seconds: recorder.elapsed(), language: promptLanguage}));
+    form.append('context', JSON.stringify({mode, requested, capture_id: recorder.startedAt, elapsed_seconds: recorder.elapsed(), language: promptLanguage,
+      inspect: showMonitor}));
     form.append('audio', audio, 'latest.wav');
     // When the person asks, the model hears the whole conversation so far, not just the last minute.
     const conversation = requested ? recorder.snapshot() : null;
@@ -573,6 +574,7 @@ const facilitator = new LiveFacilitator({
     const response = await authedFetch(`/api/sessions/${recorder.sessionId}/facilitator`, {method: 'POST', body: form, signal});
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || `The prompt couldn’t be updated (${response.status}).`);
+    if (data.inspect) monitorExchange(data.inspect, data.prompt);
     return data;
   },
 });
@@ -585,6 +587,7 @@ function resetMonitor() {
   $('#live-monitor-status').textContent = 'Connecting to Gemini Live…';
   $('#live-monitor-level').style.width = '0%';
   $('#live-monitor-sent').hidden = true;
+  for (const id of ['#io-instruction', '#io-output', '#io-shown']) $(id).textContent = '';
 }
 function monitorLevel(samples) {
   if (!showMonitor || !samples.length) return;
@@ -607,8 +610,25 @@ function monitorSent({check}) {
 }
 function monitorRejected({reason}) {
   if (!reason) return;
-  $('#live-monitor-check').textContent += `\n\nGemini's answer was not used: ${reason}`;
+  $('#io-shown').textContent = `Gemini's answer was not used: ${reason}`;
   $('#live-monitor-sent').hidden = false;
+}
+function monitorSetup(instruction) {
+  $('#io-instruction').textContent = instruction;
+}
+function describeShown(prompt) {
+  return prompt ? `Shown to you: ${prompt.kind.replaceAll('_', ' ')}: “${prompt.text}”` : 'Shown to you: nothing, so the app stayed quiet.';
+}
+function monitorAnswered({raw, shown, reason}) {
+  $('#io-output').textContent = JSON.stringify(raw ?? {}, null, 2);
+  $('#io-shown').textContent = reason ? `Gemini's answer was not used: ${reason}` : describeShown(shown);
+  $('#live-monitor-sent').hidden = false;
+}
+function monitorExchange(trace, prompt) {
+  const clips = (trace.input?.audio || []).map(clip => `${clip.type}, ${clip.seconds} s`).join(' + ');
+  $('#io-instruction').textContent = trace.input?.instruction || '';
+  $('#live-monitor-check').textContent = `${JSON.stringify(trace.input?.data ?? {}, null, 2)}${clips ? `\n\nAudio attached: ${clips}` : ''}`;
+  monitorAnswered({raw: trace.output, shown: prompt, reason: ''});
 }
 const LIVE_CHECK_MS = 15000; // Gemini Live has heard everything, so "As we go" can check more often.
 function useInterval(milliseconds) {
@@ -630,6 +650,8 @@ function openLive() {
     onAudioConfirmed: seconds => { if (liveStream === stream) monitorAudio(seconds); },
     onSent: sent => { if (liveStream === stream) monitorSent(sent); },
     onRejected: rejected => { if (liveStream === stream) monitorRejected(rejected); },
+    onSetup: instruction => { if (liveStream === stream) monitorSetup(instruction); },
+    onAnswered: answered => { if (liveStream === stream) monitorAnswered(answered); },
     onClose: message => {
       if (liveStream !== stream) return;
       liveStream = null;
@@ -706,9 +728,10 @@ function renderFacilitator() {
   $('#prompt-language').value = promptLanguage;
   $('#prompt-instant-field').hidden = recording || saved || !available || !config?.live_prompts || promptMode === 'off';
   $('#prompt-instant').checked = instantPrompts;
-  $('#prompt-monitor-field').hidden = $('#prompt-instant-field').hidden || !instantPrompts;
+  $('#prompt-monitor-field').hidden = recording || saved || !available || promptMode === 'off';
   $('#prompt-monitor').checked = showMonitor;
-  $('#live-monitor').hidden = !(showMonitor && instantPrompts && recording && liveStream);
+  $('#live-monitor').hidden = !(showMonitor && recording && promptMode !== 'off');
+  $('#live-monitor-live').hidden = !liveStream;
   $('#prompts-live').hidden = !live;
   $('#prompt-history').hidden = !saved;
   if (live) renderLivePrompt();
@@ -731,11 +754,17 @@ function renderLivePrompt() {
     card.classList.toggle('empty', !prompt);
     card.dataset.kind = prompt?.kind || '';
     if (prompt) {
-      card.replaceChildren(node('p', 'prompt-kind', PROMPT_LABELS[prompt.kind] || 'From your plan'), node('p', 'prompt-text', prompt.text));
-      if (prompt.example_wording) card.append(node('blockquote', '', prompt.example_wording));
+      if (prompt.example_wording && !['planned', 'step_away'].includes(prompt.kind)) {
+        // What she could say next is the cue; the hint says what that line does.
+        card.replaceChildren(node('p', 'prompt-kind', PROMPT_LABELS[prompt.kind] || 'From your plan'), node('p', 'prompt-hint', prompt.text),
+          node('blockquote', 'prompt-line', prompt.example_wording));
+      } else {
+        card.replaceChildren(node('p', 'prompt-kind', PROMPT_LABELS[prompt.kind] || 'From your plan'), node('p', 'prompt-text', prompt.text));
+        if (prompt.example_wording) card.append(node('blockquote', '', prompt.example_wording));
+      }
       if (prompt.help) card.append(helpBehindTap(prompt.help));
       // AI cues are in her chosen language; plan points and the fixed safety wording are not.
-      if (!['planned', 'step_away'].includes(prompt.kind)) card.querySelectorAll('.prompt-text, blockquote').forEach(element => { element.lang = PROMPT_LANGUAGES[promptLanguage]; });
+      if (!['planned', 'step_away'].includes(prompt.kind)) card.querySelectorAll('.prompt-text, .prompt-hint, blockquote').forEach(element => { element.lang = PROMPT_LANGUAGES[promptLanguage]; });
     } else {
       card.replaceChildren(node('p', 'prompt-text', halted ? facilitator.message : promptMode === 'auto' ? 'A cue will show here when it would help.' : 'Tap “Get a prompt” whenever you’d like a cue from your plan.'));
     }

@@ -741,11 +741,12 @@ def create_app(test_config=None):
         previous = events[-1] if events else {}
         recent = [{"kind": event["prompt"]["kind"], "text": event["prompt"]["text"], "elapsed_seconds": event.get("elapsed_seconds")}
                   for event in events if event["prompt"]][-3:]
+        trace = {} if context.get("inspect") is True else None  # The optional live view on her screen.
         guidance = model_call(gemini.facilitate, session, audio, {
             "elapsed_seconds": round(elapsed), "notes": previous.get("notes", ""),
             "raised_goal_ids": previous.get("raised_goal_ids", []), "recent_prompts": recent,
             "requested": requested, "audio_seconds": seconds, "conversation_seconds": conversation_seconds,
-            "language": language, "speakers": speakers}, conversation)
+            "language": language, "speakers": speakers}, conversation, *([trace] if trace is not None else []))
         # Once a goal has come up it stays raised for the rest of this recording.
         raised = set(previous.get("raised_goal_ids", [])) | set(guidance["raised_goal_ids"])
         event = {"mode": mode, "requested": requested, "elapsed_seconds": round(elapsed),
@@ -761,7 +762,10 @@ def create_app(test_config=None):
             db().execute("INSERT INTO facilitator_events (session_id, capture_id, created_at, body) VALUES (?,?,?,?)",
                          (session_id, capture, datetime.now(timezone.utc).isoformat(), json.dumps(event)))
         # The model's running notes are context for the next prompt, not something to read mid-conversation.
-        return jsonify({key: value for key, value in event.items() if key not in ("notes", "goal_evidence", "talk_seconds")})
+        reply = {key: value for key, value in event.items() if key not in ("notes", "goal_evidence", "talk_seconds")}
+        if trace is not None:
+            reply["inspect"] = trace  # Exactly what went to Gemini and what came back; nothing here is saved.
+        return jsonify(reply)
 
     sock = live.socket_for(app)
     if sock is not None:

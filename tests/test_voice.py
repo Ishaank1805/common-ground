@@ -130,7 +130,7 @@ class VoicePromptTests(unittest.TestCase):
     @patch("gemini.urlopen")
     def test_the_model_receives_the_timeline_and_its_rules(self, transport):
         transport.return_value = api_response({"threat": False, "audio_status": "clear", "notes": "", "current_step_id": "step1",
-                                               "raised_goals": [], "situation": "on_track", "situation_evidence": "", "cue": {"text": "Bring up the course.", "example_wording": "", "step_id": "no step"}})
+                                               "raised_goals": [], "situation": "on_track", "situation_evidence": "", "cue": {"text": "Bring up the course.", "example_wording": "Could I explain why this matters to me?", "step_id": "no step"}})
         gemini.facilitate({"preparation": PREPARATION, "chosen_plan": PLAN}, wav(),
                           {"elapsed_seconds": 30, "requested": False, "audio_seconds": 1.0, "speakers": {"latest": TIMELINE}})
         sent = json.loads(json.loads(transport.call_args.args[0].data)["contents"][0]["parts"][0]["text"])
@@ -176,7 +176,7 @@ class VoicePromptTests(unittest.TestCase):
         steps, goals = ["step1", "step2"], ["g1", "g2"]
         reply = {"threat": False, "audio_status": "clear", "notes": "", "current_step_id": "step1", "raised_goals": [],
                  "situation": "stuck", "situation_evidence": "Her point was met with silence.",
-                 "cue": {"text": "Explain why it matters.", "example_wording": "", "step_id": "step1"}}
+                 "cue": {"text": "Explain why it matters.", "example_wording": "Could I explain why this matters to me?", "step_id": "step1"}}
         self.assertEqual(gemini.validate_guidance({**reply, "threat": True}, steps, goals)["prompt"]["kind"], "step_away")
         self.assertEqual(gemini.validate_guidance(reply, steps, goals)["prompt"]["kind"], "next_point")
         with self.assertRaises(ValueError):
